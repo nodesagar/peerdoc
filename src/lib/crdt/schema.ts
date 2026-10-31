@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { generateFractionalIndex, generateInitialIndices } from './fractionalIndex';
-import { PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
+import { Attribution, PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
 
 export interface DocumentSnapshot {
   meta: {
@@ -168,6 +168,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       fontFamily: overlayMap.get('fontFamily') as any,
       isBold: Boolean(overlayMap.get('isBold')),
       isItalic: Boolean(overlayMap.get('isItalic')),
+      ...readAttribution(overlayMap),
     });
   });
 
@@ -183,6 +184,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (wMap.get('width') as number) ?? 10,
       height: (wMap.get('height') as number) ?? 5,
       color: (wMap.get('color') as string) || '#ffffff',
+      ...readAttribution(wMap),
     });
   });
 
@@ -198,6 +200,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (rMap.get('width') as number) ?? 10,
       height: (rMap.get('height') as number) ?? 5,
       label: rMap.get('label') as string,
+      ...readAttribution(rMap),
     });
   });
 
@@ -213,6 +216,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (sMap.get('width') as number) ?? 20,
       height: (sMap.get('height') as number) ?? 10,
       dataUrl: (sMap.get('dataUrl') as string) || '',
+      ...readAttribution(sMap),
     });
   });
 
@@ -224,6 +228,20 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
     redactions,
     signatures,
   };
+}
+
+function writeAttribution(map: Y.Map<any>, item: Attribution) {
+  if (item.createdBy) map.set('createdBy', item.createdBy);
+  if (item.createdByColor) map.set('createdByColor', item.createdByColor);
+  if (item.createdAt) map.set('createdAt', item.createdAt);
+}
+
+function readAttribution(map: Y.Map<any>): Attribution {
+  const out: Attribution = {};
+  if (typeof map.get('createdBy') === 'string') out.createdBy = map.get('createdBy');
+  if (typeof map.get('createdByColor') === 'string') out.createdByColor = map.get('createdByColor');
+  if (typeof map.get('createdAt') === 'number') out.createdAt = map.get('createdAt');
+  return out;
 }
 
 // ================= Mutations helpers with nested Y.Maps =================
@@ -250,6 +268,7 @@ export function addTextOverlayCRDT(
     yText.insert(0, overlay.text || '');
     map.set('text', yText);
 
+    writeAttribution(map, overlay);
     overlays.set(id, map);
   });
   return id;
@@ -326,6 +345,7 @@ export function addWhiteoutCRDT(
     map.set('width', box.width);
     map.set('height', box.height);
     map.set('color', box.color || '#ffffff');
+    writeAttribution(map, box);
     whiteouts.set(id, map);
   });
   return id;
@@ -372,6 +392,7 @@ export function addRedactionCRDT(
     map.set('width', redaction.width);
     map.set('height', redaction.height);
     if (redaction.label) map.set('label', redaction.label);
+    writeAttribution(map, redaction);
     redactions.set(id, map);
   });
   return id;
@@ -399,6 +420,7 @@ export function addSignatureCRDT(
     map.set('width', sig.width);
     map.set('height', sig.height);
     map.set('dataUrl', sig.dataUrl);
+    writeAttribution(map, sig);
     signatures.set(id, map);
   });
   return id;

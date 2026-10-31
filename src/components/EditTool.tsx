@@ -22,6 +22,58 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
 import { SyncWaitingCard } from './SyncWaitingCard';
+import type { Awareness } from 'y-protocols/awareness';
+import { usePeers, attributionTitle, Peer, PresenceState } from '../lib/presence';
+
+/** Live pointers of collaborators on one page. Own subscription: moves don't re-render the editor. */
+const PeerCursors: React.FC<{ awareness: Awareness | null; pageIndex: number }> = ({ awareness, pageIndex }) => {
+  const cursors = usePeers(awareness, (peers) =>
+    peers
+      .filter((p) => p.tool === 'edit' && p.cursor?.pageIndex === pageIndex)
+      .map((p) => ({ id: p.clientId, name: p.user.name, color: p.user.color, x: p.cursor!.x, y: p.cursor!.y }))
+  );
+  return (
+    <>
+      {cursors.map((c) => (
+        <div
+          key={c.id}
+          aria-hidden
+          className="absolute z-20 pointer-events-none transition-[left,top] duration-100 ease-linear"
+          style={{ left: `${c.x}%`, top: `${c.y}%` }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" style={{ color: c.color }}>
+            <path d="M1 1l5.5 13 2-5.5L14 6.5z" fill="currentColor" stroke="white" strokeWidth="1" />
+          </svg>
+          <span
+            className="absolute left-3.5 top-3.5 whitespace-nowrap text-[10px] font-semibold text-white px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: c.color }}
+          >
+            {c.name}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+};
+
+/** overlay id -> collaborator who has it selected */
+const selectPeerSelections = (peers: Peer[]) =>
+  Object.fromEntries(
+    peers.filter((p) => p.tool === 'edit' && p.selection).map((p) => [p.selection!, { name: p.user.name, color: p.user.color }])
+  );
+
+const PeerTag: React.FC<{ peer?: { name: string; color: string } }> = ({ peer }) =>
+  peer ? (
+    <span
+      className="absolute -top-4 left-0 whitespace-nowrap text-[9px] font-semibold text-white px-1 rounded-sm pointer-events-none"
+      style={{ backgroundColor: peer.color }}
+    >
+      {peer.name}
+    </span>
+  ) : null;
+
+const peerOutline = (peer?: { color: string }): React.CSSProperties =>
+  peer ? { outline: `2px solid ${peer.color}`, outlineOffset: 1 } : {};
 
 const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -111,6 +163,33 @@ export const EditTool: React.FC<EditToolProps> = ({
     color: '#1a1c1c',
   });
   const [eraserColor, setEraserColor] = useState('#ffffff');
+
+  // Presence: what we point at and select; what collaborators have selected
+  const { setPresence, awareness } = crdt;
+  const peerSelections = usePeers(awareness, selectPeerSelections);
+  const selectedId = activeTextId ?? draggingEraserId;
+  useEffect(() => {
+    setPresence({ selection: selectedId });
+  }, [setPresence, awareness, selectedId]);
+
+  // Cursor updates are coalesced: at most ~8 per second leave this tab
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCursor = useRef<PresenceState['cursor']>(null);
+  const publishCursor = (cursor: PresenceState['cursor']) => {
+    pendingCursor.current = cursor;
+    if (cursorTimer.current) return;
+    cursorTimer.current = setTimeout(() => {
+      cursorTimer.current = null;
+      setPresence({ cursor: pendingCursor.current });
+    }, 120);
+  };
+  useEffect(
+    () => () => {
+      if (cursorTimer.current) clearTimeout(cursorTimer.current);
+      setPresence({ cursor: null, selection: null });
+    },
+    [setPresence]
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -517,8 +596,11 @@ export const EditTool: React.FC<EditToolProps> = ({
                 }}
                 onPointerMove={(e) => {
                   const targetCanvas = pageRefs.current[pageIdx];
-                  if (targetCanvas) handlePointerMove(e, targetCanvas);
+                  if (!targetCanvas) return;
+                  handlePointerMove(e, targetCanvas);
+                  publishCursor({ pageIndex: pageIdx, ...getCoordinates(e, targetCanvas) });
                 }}
+                onPointerLeave={() => publishCursor(null)}
               >
                 <Page
                   pageNumber={pageIdx + 1}
@@ -533,14 +615,17 @@ export const EditTool: React.FC<EditToolProps> = ({
                     key={w.id}
                     data-id={w.id}
                     className="eraser-node absolute cursor-move border border-dashed border-black/20 hover:border-black/50 group"
+                    title={attributionTitle(w)}
                     style={{
                       left: `${w.x}%`,
                       top: `${w.y}%`,
                       width: `${w.width}%`,
                       height: `${w.height}%`,
                       backgroundColor: w.color || '#ffffff',
+                      ...peerOutline(peerSelections[w.id]),
                     }}
                   >
+                    <PeerTag peer={peerSelections[w.id]} />
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -576,6 +661,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                     className={`text-overlay-node absolute cursor-move group px-1 py-0.5 rounded border transition-colors ${
                       activeTextId === t.id ? 'border-[#005db2] bg-blue-50/20' : 'border-transparent hover:border-black/20'
                     }`}
+                    title={attributionTitle(t)}
                     style={{
                       left: `${t.x}%`,
                       top: `${t.y}%`,
@@ -584,8 +670,10 @@ export const EditTool: React.FC<EditToolProps> = ({
                       fontWeight: t.isBold ? 'bold' : 'normal',
                       fontStyle: t.isItalic ? 'italic' : 'normal',
                       color: t.color || '#1a1c1c',
+                      ...peerOutline(peerSelections[t.id]),
                     }}
                   >
+                    <PeerTag peer={peerSelections[t.id]} />
                     <input
                       type="text"
                       value={t.text}
@@ -605,6 +693,8 @@ export const EditTool: React.FC<EditToolProps> = ({
                     </button>
                   </div>
                 ))}
+
+                <PeerCursors awareness={awareness} pageIndex={pageIdx} />
               </div>
             );
           })}

@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
 import { WifiOff, Users, Download, Upload, Copy, Check, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
 import { SyncStatus } from '../types';
+import { PresenceAvatars } from './PresenceAvatars';
+import type { Awareness } from 'y-protocols/awareness';
+import type { PresenceUser } from '../lib/presence';
+
+export interface PresenceProps {
+  awareness: Awareness | null;
+  user: PresenceUser;
+  onRename: (user: PresenceUser) => void;
+}
 
 interface CollaborationBarProps {
   documentId: string | null;
@@ -13,6 +22,7 @@ interface CollaborationBarProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  presence: PresenceProps;
 }
 
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
@@ -26,6 +36,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   onRedo,
   canUndo,
   canRedo,
+  presence,
 }) => {
   const [copied, setCopied] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -76,6 +87,8 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           </span>
         )}
       </div>
+
+      <PresenceAvatars {...presence} />
 
       {servingCount > 0 && (
         <span

@@ -21,6 +21,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { attributionTitle } from '../lib/presence';
 import { SyncWaitingCard } from './SyncWaitingCard';
 
 interface RedactToolProps {
@@ -424,6 +425,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                   {pageReds.map((r) => (
                     <div
                       key={r.id}
+                      title={attributionTitle(r)}
                       className="absolute bg-black flex items-center justify-center text-white/50 text-[10px] font-mono tracking-widest border border-red-500/30 group"
                       style={{
                         left: `${r.x}%`,

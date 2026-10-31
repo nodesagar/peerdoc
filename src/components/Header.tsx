@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ActiveTool, SyncStatus } from '../types';
 import { ShieldCheck, Menu, X } from 'lucide-react';
 import { pressable } from '../lib/pressable';
-import { CollaborationBar } from './CollaborationBar';
+import { CollaborationBar, PresenceProps } from './CollaborationBar';
 
 interface HeaderProps {
   activeTool: ActiveTool;
@@ -18,6 +18,7 @@ interface HeaderProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  presence: PresenceProps;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRedo,
   canUndo,
   canRedo,
+  presence,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -116,6 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
             onRedo={onRedo}
             canUndo={canUndo}
             canRedo={canRedo}
+            presence={presence}
           />
 
           <button

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
+import { getLocalUser, saveLocalUser, PresenceState, PresenceUser } from '../lib/presence';
 import {
   DocumentSnapshot,
   readDocumentSnapshot,
@@ -67,6 +69,10 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const [transferLog, setTransferLog] = useState<TransferLogEntry[]>([]);
   const [servingCount, setServingCount] = useState<number>(0);
 
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
+  const [user, setUserState] = useState<PresenceUser>(getLocalUser);
+  const userRef = useRef(user);
+  const awarenessRef = useRef<Awareness | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
@@ -96,6 +102,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   useEffect(() => {
     if (!documentId) {
       setDoc(null);
+      setAwareness(null);
       docRef.current = null;
       setSnapshot(EMPTY_SNAPSHOT);
       setIsLoaded(false);
@@ -136,6 +143,12 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const whiteoutsMap = getWhiteoutsMap(ydoc);
     const redactionsMap = getRedactionsMap(ydoc);
     const signaturesMap = getSignaturesMap(ydoc);
+
+    // Presence travels with the sync engine; it is created per room and never persisted.
+    const roomAwareness = new Awareness(ydoc);
+    roomAwareness.setLocalState({ user: userRef.current } satisfies PresenceState);
+    setAwareness(roomAwareness);
+    awarenessRef.current = roomAwareness;
 
     const undoManager = createUndoManager(ydoc);
     const refreshUndoState = () => {
@@ -183,6 +196,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
         // 2. Connect P2P and IndexedDB persistence
         const handle = await createP2PProvider(cleanDocId, ydoc, {
           roomKey: roomKey ?? undefined,
+          awareness: roomAwareness,
           getLocalPdfBytes: () => rawPdfBytesRef.current,
           onStatusChange: (status) => {
             if (!isCancelled) setSyncStatus(status);
@@ -248,9 +262,12 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
 
       if (providerHandleRef.current) {
-        providerHandleRef.current.destroy();
+        providerHandleRef.current.destroy(); // announces our departure first
         providerHandleRef.current = null;
       }
+      roomAwareness.destroy();
+      if (awarenessRef.current === roomAwareness) awarenessRef.current = null;
+      setAwareness((a) => (a === roomAwareness ? null : a));
       if (docRef.current === ydoc) docRef.current = null;
       ydoc.destroy();
     };
@@ -258,10 +275,31 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
   // ================= Mutation Helpers =================
 
+  /** Stamped on every new item so peers can see who added it and when. */
+  const attribution = () => ({
+    createdBy: userRef.current.name,
+    createdByColor: userRef.current.color,
+    createdAt: Date.now(),
+  });
+
+  /** Merge fields into this tab's presence (tool, cursor, selection). */
+  const setPresence = useCallback((fields: Partial<PresenceState>) => {
+    const a = awarenessRef.current;
+    if (!a || !a.getLocalState()) return;
+    a.setLocalState({ ...a.getLocalState(), ...fields });
+  }, []);
+
+  const setUser = useCallback((next: PresenceUser) => {
+    userRef.current = next;
+    saveLocalUser(next);
+    setUserState(next);
+    setPresence({ user: next });
+  }, [setPresence]);
+
   const addTextOverlay = useCallback(
     (overlay: Omit<TextOverlay, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addTextOverlayCRDT(docRef.current, overlay);
+      return addTextOverlayCRDT(docRef.current, { ...attribution(), ...overlay });
     },
     []
   );
@@ -282,7 +320,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addWhiteout = useCallback(
     (box: Omit<WhiteoutBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addWhiteoutCRDT(docRef.current, box);
+      return addWhiteoutCRDT(docRef.current, { ...attribution(), ...box });
     },
     []
   );
@@ -303,7 +341,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addRedaction = useCallback(
     (redaction: Omit<RedactionBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addRedactionCRDT(docRef.current, redaction);
+      return addRedactionCRDT(docRef.current, { ...attribution(), ...redaction });
     },
     []
   );
@@ -316,7 +354,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addSignature = useCallback(
     (sig: Omit<SignatureBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addSignatureCRDT(docRef.current, sig);
+      return addSignatureCRDT(docRef.current, { ...attribution(), ...sig });
     },
     []
   );
@@ -423,5 +461,9 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     redo,
     canUndo,
     canRedo,
+    awareness,
+    user,
+    setUser,
+    setPresence,
   };
 }

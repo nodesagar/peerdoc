@@ -17,6 +17,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { attributionTitle } from '../lib/presence';
 import { SyncWaitingCard } from './SyncWaitingCard';
 
 interface SignToolProps {
@@ -416,6 +417,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                 {pageSigs.map((s) => (
                   <div
                     key={s.id}
+                    title={attributionTitle(s)}
                     className="sig-node absolute cursor-move border border-dashed border-purple-500 hover:border-purple-700 group p-1 bg-white/40"
                     style={{
                       left: `${s.x}%`,

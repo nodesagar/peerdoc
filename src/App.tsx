@@ -70,6 +70,16 @@ export default function App() {
     }
   }, []);
 
+  // Let collaborators see which tool we have open
+  const { setPresence, awareness } = crdt;
+  useEffect(() => {
+    setPresence({ tool: activeTool });
+  }, [setPresence, awareness, activeTool]);
+  const presence = React.useMemo(
+    () => ({ awareness: crdt.awareness, user: crdt.user, onRename: crdt.setUser }),
+    [crdt.awareness, crdt.user, crdt.setUser]
+  );
+
   // Undo/redo shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y
   const { undo, redo } = crdt;
   useEffect(() => {
@@ -207,6 +217,7 @@ export default function App() {
         onRedo={crdt.redo}
         canUndo={crdt.canUndo}
         canRedo={crdt.canRedo}
+        presence={presence}
       />
 
       {/* Main Tool Area */}

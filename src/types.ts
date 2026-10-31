@@ -24,7 +24,14 @@ export interface ProcessedDoc {
   documentId?: string; // SHA-256 room ID for P2P sync
 }
 
-export interface RedactionBox {
+/** Who added an item (display name at the time) and when; absent on items from older builds. */
+export interface Attribution {
+  createdBy?: string;
+  createdByColor?: string;
+  createdAt?: number;
+}
+
+export interface RedactionBox extends Attribution {
   id: string;
   pageIndex: number;
   x: number; // percentage
@@ -34,7 +41,7 @@ export interface RedactionBox {
   label?: string;
 }
 
-export interface WhiteoutBox {
+export interface WhiteoutBox extends Attribution {
   id: string;
   pageIndex: number;
   x: number; // percentage
@@ -44,7 +51,7 @@ export interface WhiteoutBox {
   color?: string; // hex
 }
 
-export interface TextOverlay {
+export interface TextOverlay extends Attribution {
   id: string;
   pageIndex: number;
   x: number; // percentage
@@ -57,7 +64,7 @@ export interface TextOverlay {
   isItalic?: boolean;
 }
 
-export interface SignatureBox {
+export interface SignatureBox extends Attribution {
   id: string;
   pageIndex: number;
   x: number;
