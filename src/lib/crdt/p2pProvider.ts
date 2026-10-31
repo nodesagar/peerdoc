@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { joinRoom } from 'trystero/torrent';
 import { SyncTransport, PeerMessage, DocSyncEngine, BroadcastChannelTransport } from './docSync';
+import { createRelayTransport } from './relayTransport';
 import { SyncStatus } from '../../types';
 
 // High-availability public WebTorrent trackers verified for WebRTC browser signaling
@@ -12,17 +13,14 @@ const RELIABLE_TRACKERS = [
   'wss://tracker.files.fm:7073/announce',
 ];
 
-// Multi-provider STUN configuration for symmetric and restricted NAT traversal
+// STUN for NAT traversal. Two servers is plenty: Trystero gathers ICE without
+// trickle, so every extra server can delay the offer. Trystero spreads rtcConfig
+// into simple-peer's *options*, which reads RTCPeerConnection settings from
+// `config` - a bare { iceServers } there is silently ignored.
 const RTC_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:global.stun.twilio.com:3478' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  ],
+  config: {
+    iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }],
+  },
 };
 
 export class TrysteroTransport implements SyncTransport {
@@ -44,7 +42,7 @@ export class TrysteroTransport implements SyncTransport {
         {
           appId: this.appId,
           relayUrls: RELIABLE_TRACKERS,
-          rtcConfig: RTC_CONFIG,
+          rtcConfig: RTC_CONFIG as unknown as RTCConfiguration, // see RTC_CONFIG note
           relayRedundancy: 4,
         },
         roomId
@@ -139,17 +137,22 @@ export async function createP2PProvider(
   // Wait for indexeddb to load locally persisted state
   await idbProvider.whenSynced;
 
-  // 2. Transports: WebRTC (Trystero) + BroadcastChannel fallback
+  // 2. Transports: BroadcastChannel (same browser), WebRTC (direct P2P), and an
+  // encrypted MQTT relay for networks where WebRTC cannot connect.
   const transports: SyncTransport[] = [
     new BroadcastChannelTransport(),
   ];
 
-  // Try instantiating Trystero in browser environment
   if (typeof window !== 'undefined') {
     try {
       transports.push(new TrysteroTransport('editordoc-p2p-v1'));
     } catch (e) {
       console.warn('Could not initialize Trystero transport:', e);
+    }
+    try {
+      transports.push(createRelayTransport());
+    } catch (e) {
+      console.warn('Could not initialize relay transport:', e);
     }
   }
 

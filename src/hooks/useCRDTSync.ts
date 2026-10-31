@@ -187,7 +187,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
         // 4. Request PDF bytes from peers if missing locally
         if (!existingPdf && !initialPdfBytes) {
-          handle.engine.requestPDFFromPeers();
+          handle.engine.requestPDFFromPeers(false); // direct links only; poll falls back to relay
         }
 
         if (!isCancelled) {

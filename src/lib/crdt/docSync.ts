@@ -27,6 +27,8 @@ export interface SyncTransport {
   onPeerLeave(cb: (peerId: string) => void): void;
   onMessage(cb: (peerId: string, message: PeerMessage) => void): void;
   getPeers(): string[];
+  /** Third-party relay (e.g. MQTT broker): use only when no direct link exists. */
+  readonly relay?: boolean;
 }
 
 export interface DocSyncOptions {
@@ -52,6 +54,8 @@ export class DocSyncEngine {
   // `${transport}:${peerId}` -> remote session ID (null until its handshake arrives)
   private activePeers: Map<string, string | null> = new Map();
   private readonly sessionId = crypto.randomUUID();
+  private firstRelayLinkAt = 0;
+  private static RELAY_GRACE_MS = 6000; // give WebRTC a chance before pulling the PDF via relay
   private pdfReassembler: ChunkReassembler | null = null;
   private destroyed = false;
   private pdfPollTimer: any = null;
@@ -103,7 +107,9 @@ export class DocSyncEngine {
       // If we have connected peers and still lack PDF, request again
       // (but not while a transfer is actively streaming in - that restarts it)
       if (this.activePeers.size > 0 && Date.now() - this.lastChunkAt > 5000) {
-        this.requestPDFFromPeers();
+        const relayDue =
+          this.firstRelayLinkAt > 0 && Date.now() - this.firstRelayLinkAt > DocSyncEngine.RELAY_GRACE_MS;
+        this.requestPDFFromPeers(relayDue && this.directLinkCount() === 0);
       }
     }, 2500);
   }
@@ -152,7 +158,12 @@ export class DocSyncEngine {
       sender: this.sessionId,
     });
 
-    // 2. Check if we need the PDF file from this newly joined peer
+    // 2. Check if we need the PDF file from this newly joined peer.
+    // Relay links never pull the PDF immediately; the poll falls back to them.
+    if (transport.relay) {
+      this.firstRelayLinkAt ||= Date.now();
+      return;
+    }
     const hasLocal = Boolean(this.options.getLocalPdfBytes?.());
     if (!hasLocal) {
       const existsInDb = await hasOriginalPDF(this.documentId);
@@ -242,8 +253,10 @@ export class DocSyncEngine {
               type: 'pdf-chunk',
               payload: chunks[i],
             });
-            // Small pacing delay to avoid flooding WebRTC DataChannel
-            if (chunks.length > 2 && i % 4 === 0) {
+            // Pacing: avoid flooding the DataChannel / tripping public broker rate limits
+            if (transport.relay) {
+              await new Promise((r) => setTimeout(r, 40));
+            } else if (chunks.length > 2 && i % 4 === 0) {
               await new Promise((r) => setTimeout(r, 6));
             }
           }
@@ -296,15 +309,25 @@ export class DocSyncEngine {
   /**
    * Request original PDF bytes from connected peers
    */
-  public requestPDFFromPeers() {
+  public requestPDFFromPeers(viaRelay = this.directLinkCount() === 0) {
     if (this.destroyed) return;
     const msg: PeerMessage = {
       type: 'request-pdf',
       payload: { documentId: this.documentId },
     };
     for (const t of this.transports) {
-      t.broadcast(msg);
+      if (!t.relay || viaRelay) t.broadcast(msg);
     }
+  }
+
+  /** Links over non-relay transports (BroadcastChannel, WebRTC). */
+  private directLinkCount(): number {
+    let n = 0;
+    for (const t of this.transports) {
+      if (t.relay) continue;
+      for (const key of this.activePeers.keys()) if (key.startsWith(`${t.name}:`)) n++;
+    }
+    return n;
   }
 
   private notifyPeers() {
@@ -335,13 +358,19 @@ export class DocSyncEngine {
   }
 }
 
+/** A dumb broadcast medium: every subscriber of the room receives every posted message. */
+export interface PubSubBus {
+  post(msg: any): void;
+  close(): void;
+}
+export type PubSubBusFactory = (roomId: string, onMessage: (msg: any) => void) => PubSubBus;
+
 /**
- * BroadcastChannelTransport enables same-browser tab-to-tab synchronization
- * with zero network requirement.
+ * Peer presence + addressed messaging on top of any broadcast bus
+ * (BroadcastChannel locally, an encrypted MQTT topic as network relay).
  */
-export class BroadcastChannelTransport implements SyncTransport {
-  public readonly name = 'BroadcastChannel';
-  private channel: BroadcastChannel | null = null;
+export class PubSubTransport implements SyncTransport {
+  private bus: PubSubBus | null = null;
   private myPeerId: string = crypto.randomUUID();
   private peerJoinCbs: ((peerId: string) => void)[] = [];
   private peerLeaveCbs: ((peerId: string) => void)[] = [];
@@ -349,6 +378,12 @@ export class BroadcastChannelTransport implements SyncTransport {
   private peers: Map<string, number> = new Map(); // peerId -> last seen
   private heartbeatInterval: any = null;
   private static PEER_TIMEOUT_MS = 75000; // > Chrome hidden-tab timer throttle (1/min)
+
+  constructor(
+    public readonly name: string,
+    private openBus: PubSubBusFactory,
+    public readonly relay = false
+  ) {}
 
   // Tabs that close or crash never run React cleanup, so peers must expire.
   private seen(senderId: string) {
@@ -362,26 +397,20 @@ export class BroadcastChannelTransport implements SyncTransport {
     if (this.peers.delete(peerId)) this.peerLeaveCbs.forEach((cb) => cb(peerId));
   }
 
-  private handlePageHide = () => {
-    this.channel?.postMessage({ senderId: this.myPeerId, type: 'leave' });
-  };
+  private post(msg: Record<string, any>) {
+    this.bus?.post({ senderId: this.myPeerId, ...msg });
+  }
+
+  private handlePageHide = () => this.post({ type: 'leave' });
 
   connect(roomId: string): void {
-    this.channel = new BroadcastChannel(`editordoc_room_${roomId}`);
-
-    this.channel.onmessage = (event) => {
-      const { senderId, targetId, type, message } = event.data || {};
+    this.bus = this.openBus(roomId, (data) => {
+      const { senderId, targetId, type, message } = data || {};
       if (!senderId || senderId === this.myPeerId) return;
 
       if (type === 'announce') {
-        if (this.seen(senderId)) {
-          // Reply with ack so they know about us
-          this.channel?.postMessage({
-            senderId: this.myPeerId,
-            targetId: senderId,
-            type: 'announce-ack',
-          });
-        }
+        // Reply with ack so they know about us
+        if (this.seen(senderId)) this.post({ targetId: senderId, type: 'announce-ack' });
       } else if (type === 'announce-ack') {
         if (targetId === this.myPeerId) this.seen(senderId);
       } else if (type === 'leave') {
@@ -392,23 +421,16 @@ export class BroadcastChannelTransport implements SyncTransport {
           this.messageCbs.forEach((cb) => cb(senderId, message));
         }
       }
-    };
-
-    // Announce presence
-    this.channel.postMessage({
-      senderId: this.myPeerId,
-      type: 'announce',
     });
+
+    this.post({ type: 'announce' });
 
     // Heartbeat to keep track of live peers; expire silent ones
     this.heartbeatInterval = setInterval(() => {
-      this.channel?.postMessage({
-        senderId: this.myPeerId,
-        type: 'announce',
-      });
+      this.post({ type: 'announce' });
       const now = Date.now();
       for (const [peerId, lastSeen] of this.peers) {
-        if (now - lastSeen > BroadcastChannelTransport.PEER_TIMEOUT_MS) this.dropPeer(peerId);
+        if (now - lastSeen > PubSubTransport.PEER_TIMEOUT_MS) this.dropPeer(peerId);
       }
     }, 5000);
 
@@ -418,34 +440,22 @@ export class BroadcastChannelTransport implements SyncTransport {
   disconnect(): void {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.handlePageHide);
-    if (this.channel) {
+    if (this.bus) {
       try {
-        this.channel.postMessage({
-          senderId: this.myPeerId,
-          type: 'leave',
-        });
-        this.channel.close();
+        this.post({ type: 'leave' });
+        this.bus.close();
       } catch (e) {}
-      this.channel = null;
+      this.bus = null;
     }
     this.peers.clear();
   }
 
   sendToPeer(peerId: string, message: PeerMessage): void {
-    this.channel?.postMessage({
-      senderId: this.myPeerId,
-      targetId: peerId,
-      type: 'data',
-      message,
-    });
+    this.post({ targetId: peerId, type: 'data', message });
   }
 
   broadcast(message: PeerMessage): void {
-    this.channel?.postMessage({
-      senderId: this.myPeerId,
-      type: 'data',
-      message,
-    });
+    this.post({ type: 'data', message });
   }
 
   onPeerJoin(cb: (peerId: string) => void): void {
@@ -462,5 +472,16 @@ export class BroadcastChannelTransport implements SyncTransport {
 
   getPeers(): string[] {
     return Array.from(this.peers.keys());
+  }
+}
+
+/** Same-browser tab-to-tab sync with zero network requirement. */
+export class BroadcastChannelTransport extends PubSubTransport {
+  constructor() {
+    super('BroadcastChannel', (roomId, onMessage) => {
+      const channel = new BroadcastChannel(`editordoc_room_${roomId}`);
+      channel.onmessage = (event) => onMessage(event.data);
+      return { post: (msg) => channel.postMessage(msg), close: () => channel.close() };
+    });
   }
 }
