@@ -19,6 +19,7 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
   - **BroadcastChannel**: Instantaneous tab-to-tab fallback synchronization for local testing and multi-window work.
   - **Encrypted MQTT relay (`relayTransport.ts`)**: When WebRTC cannot connect (Wi-Fi client isolation, blocked mDNS, symmetric/CGNAT, no TURN), peers exchange messages through public MQTT brokers (HiveMQ, EMQX). The relay is always connected and carries CRDT edits alongside WebRTC. Payloads are AES-256-GCM encrypted with a key derived from the document ID plus room key and published to a hashed topic, so brokers see only ciphertext. The PDF is pulled via the relay only if it has not arrived over a direct link within a few seconds.
   - **State-Vector Handshake**: Upon every peer connection, reciprocal state vectors (`Y.encodeStateVector`) and deltas (`Y.encodeStateAsUpdate`) are exchanged, recovering all offline history.
+- **Presence (`presence.ts`)**: Yjs awareness over the same transports shows who is in the room, which tool they have open, their live cursors and what they have selected. Never stored in the document; relay links get at most one presence message per 400 ms so cursor streams can't flood public brokers.
 - **Per-User Undo/Redo**: A `Y.UndoManager` tracks only this user's edits (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, toolbar buttons). Peer edits, IndexedDB loads, `.cdsync` imports and document seeding are never undone.
 - **Installable Offline App (PWA)**: A service worker (`src/sw.js`, generated at build with every asset precached) serves the app shell cache-first, so the editor opens with no network. New versions install in the background and apply when the user clicks **Reload**.
 - **Store-and-Forward (`fileSync.ts`)**: Air-gapped file sync via `.cdsync` files containing idempotent delta updates.
@@ -75,7 +76,9 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
 4. **Permanent True Redactions (`RedactTool.tsx`)**: Renders page canvas, paints solid black boxes directly into pixel data, and replaces the page with a clean rasterized image. Permanently strips all sensitive metadata.
 5. **Digital Signature Tool (`SignTool.tsx`)**: Draw signatures, generate cursive typed signatures, or upload PNGs; position and stamp onto any page.
 6. **Local Single-shot Utilities**: Merge multiple PDFs, compress PDFs (downscale and re-encode JPEG photos/scans per level, object streams), split pages, apply diagonal text watermarks, and password-encrypt PDFs.
-7. **Store-and-Forward Sync (`CollaborationBar.tsx`)**: Export `.cdsync` files to transfer updates via USB flash drives or email when peers are never online at the same time.
+7. **Review & Comments (`Annotations.tsx`)**: Highlight, box, freehand and sticky-note markup; every annotation is a comment thread with replies, resolve/reopen and a Comments panel. Exported PDFs keep the markup and turn open threads into real PDF sticky notes.
+8. **Presence & Attribution**: Avatars of everyone in the room (click yours to rename), live cursors and selections in the editor, and "Added by … · 5 minutes ago" on every item.
+9. **Store-and-Forward Sync (`CollaborationBar.tsx`)**: Export `.cdsync` files to transfer updates via USB flash drives or email when peers are never online at the same time.
 
 ---
 

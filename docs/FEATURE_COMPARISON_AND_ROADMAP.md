@@ -83,9 +83,9 @@ Legend: ✅ has · ◐ partial · ❌ missing. Columns: **SP** Stirling-PDF, **B
 | Works offline for days, then merges | ❌ | ◐ | ❌ | ❌ | ❌ | ✅ |
 | Air-gapped sync file (`.cdsync`) | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
 | E2E-encrypted relay | ❌ | n/a | ❌ | ❌ | ❌ | ✅ |
-| Presence (names, colours, cursors) | ❌ | ❌ | ✅ | ❌ | ◐ | ❌ |
-| Activity attribution (who changed what) | ◐ audit | ❌ | ✅ | ✅ audit | ◐ | ❌ |
-| Comment threads (reply/resolve) | ◐ | ◐ | ✅ | ❌ | ✅ | ❌ |
+| Presence (names, colours, cursors) | ❌ | ❌ | ✅ | ❌ | ◐ | ✅ (M2) |
+| Activity attribution (who changed what) | ◐ audit | ❌ | ✅ | ✅ audit | ◐ | ◐ (M2: who added, when) |
+| Comment threads (reply/resolve) | ◐ | ◐ | ✅ | ❌ | ✅ | ✅ (M2) |
 | Chat | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
 | Permissions (view / comment / edit) | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ |
 | Room secret / access control | ✅ SSO | n/a | ✅ | ✅ | ✅ | ✅ (M1, link key) |
@@ -97,10 +97,10 @@ Legend: ✅ has · ◐ partial · ❌ missing. Columns: **SP** Stirling-PDF, **B
 | Feature | SP | BP | OO | DM | XO | Us |
 |---|---|---|---|---|---|---|
 | Viewer with zoom, search, thumbnails | ✅ | ✅ | ✅ | ✅ | ✅ | ◐ |
-| Highlight / underline / strikethrough | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Sticky notes / callouts | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Shapes / arrows / lines | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Freehand ink | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Highlight / underline / strikethrough | ✅ | ✅ | ✅ | ❌ | ✅ | ◐ (M2: area highlight) |
+| Sticky notes / callouts | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ (M2) |
+| Shapes / arrows / lines | ✅ | ✅ | ✅ | ❌ | ✅ | ◐ (M2: boxes) |
+| Freehand ink | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ (M2) |
 | Image insert | ✅ | ✅ | ✅ | ❌ | ✅ | ◐ (signature only) |
 | Stamps (Approved, Draft, …) | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Remove / flatten annotations | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -287,7 +287,7 @@ Build order: **4, 1, P0, 3, 2, 5.** Small, high-score items go first, and commen
 | Milestone | Contents | Exit check |
 |---|---|---|
 | **M1 Foundations** ✅ done 2026-10-31 | Undo/redo, PWA, room secret, cleanup | Reload offline opens the app; Ctrl+Z undoes only local edits (test); a wrong passphrase can't decrypt relay traffic (test) |
-| **M2 Real collaboration** | Presence plus attribution, annotations plus comment threads | Two peers see each other's cursors; a comment thread converges after offline edits (convergence test) |
+| **M2 Real collaboration** ✅ done 2026-11-01 | Presence plus attribution, annotations plus comment threads | Two peers see each other's cursors; a comment thread converges after offline edits (convergence test) |
 | **M3 Forms** | Collaborative AcroForm filling plus export/flatten | Sample government form filled by 2 peers exports with correct values |
 | **M4 Trust** | Version history, selective plus pattern redaction, P2P signing workflow with audit page | Restore checkpoint; redacted text not extractable while other text still selectable |
 | **M5 Breadth** | P1 remainder, then P2 by user demand | — |
