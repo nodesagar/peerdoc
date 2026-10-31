@@ -66,4 +66,13 @@ describe('Fractional Indexing', () => {
       expect(indices[i] < indices[i + 1]).toBe(true);
     }
   });
+
+  it('keeps order under repeated prepends (no keys ending in "0")', () => {
+    let key = '1m';
+    for (let i = 0; i < 30; i++) {
+      const next = generateFractionalIndex(null, key);
+      expect(next < key).toBe(true);
+      key = next;
+    }
+  });
 });

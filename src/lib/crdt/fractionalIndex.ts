@@ -39,13 +39,8 @@ export function generateFractionalIndex(
       const nextVal = getCharVal(next[i]);
       if (nextVal > 0) {
         const midVal = Math.floor(nextVal / 2);
-        if (midVal === 0 && i === next.length - 1) {
-          // If 0 would create '0' at end, append 'm'
-          result += '0m';
-        } else {
-          result += getValChar(midVal);
-        }
-        return result;
+        // Never emit a key ending in '0': nothing can be prepended before it.
+        return result + (midVal === 0 ? '0m' : getValChar(midVal));
       }
       result += '0';
     }

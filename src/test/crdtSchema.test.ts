@@ -113,4 +113,41 @@ describe('CRDT Schema & Nested Map Merges', () => {
     Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc));
     expect(readDocumentSnapshot(doc2).whiteouts.length).toBe(1);
   });
+
+  it('merges concurrent text edits in one overlay without duplicating text', () => {
+    const a = new Y.Doc();
+    const id = addTextOverlayCRDT(a, { pageIndex: 0, x: 0, y: 0, text: 'Hello', fontSize: 12 });
+    const b = new Y.Doc();
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+
+    updateTextOverlayCRDT(a, id, { text: 'Hello world' });
+    updateTextOverlayCRDT(b, id, { text: 'Hello!' });
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b));
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+
+    const textA = readDocumentSnapshot(a).textOverlays[0].text;
+    expect(textA).toBe(readDocumentSnapshot(b).textOverlays[0].text);
+    expect(textA.match(/Hello/g)?.length).toBe(1);
+  });
+
+  it('peers that seed the same PDF independently keep each other\'s page edits', () => {
+    const a = new Y.Doc();
+    const b = new Y.Doc();
+    initializeDocument(a, 'f'.repeat(64), 'contract.pdf', 3);
+    initializeDocument(b, 'f'.repeat(64), 'renamed.pdf', 3);
+
+    rotatePageCRDT(a, 'page-0', 90);
+    setPageDeletedCRDT(b, 'page-2', true);
+
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b));
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+
+    for (const doc of [a, b]) {
+      const pages = readDocumentSnapshot(doc).pages;
+      expect(pages.length).toBe(3);
+      expect(pages.find((p) => p.id === 'page-0')!.rotation).toBe(90);
+      expect(pages.find((p) => p.id === 'page-2')!.deleted).toBe(true);
+    }
+    expect(JSON.stringify(readDocumentSnapshot(a))).toEqual(JSON.stringify(readDocumentSnapshot(b)));
+  });
 });

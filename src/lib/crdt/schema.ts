@@ -39,6 +39,45 @@ export function getSignaturesMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
   return doc.getMap('signatures');
 }
 
+/** FNV-1a 32-bit; stable non-zero Yjs client ID derived from the document ID. */
+function seedClientId(documentId: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < documentId.length; i++) {
+    h ^= documentId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0 || 1;
+}
+
+/**
+ * Byte-identical initial page structure for a given (documentId, pageCount).
+ * Every peer that seeds the same PDF independently produces the SAME Yjs structs
+ * (same client ID + clocks), so merging them is a no-op instead of one peer's
+ * page maps (and every rotation/move nested in them) overwriting the other's.
+ */
+function buildSeedUpdate(documentId: string, pageCount: number): Uint8Array {
+  const seed = new Y.Doc();
+  seed.clientID = seedClientId(documentId);
+  seed.transact(() => {
+    getMetaMap(seed).set('documentId', documentId);
+    const pages = getPagesMap(seed);
+    const initialOrders = generateInitialIndices(pageCount);
+    for (let i = 0; i < pageCount; i++) {
+      const pageId = `page-${i}`;
+      const pageMap = new Y.Map<any>();
+      pageMap.set('id', pageId);
+      pageMap.set('originalIndex', i);
+      pageMap.set('order', initialOrders[i]);
+      pageMap.set('rotation', 0);
+      pageMap.set('deleted', false);
+      pages.set(pageId, pageMap);
+    }
+  });
+  const update = Y.encodeStateAsUpdate(seed);
+  seed.destroy();
+  return update;
+}
+
 /**
  * Initialize document metadata and pages if doc is newly created.
  */
@@ -48,28 +87,15 @@ export function initializeDocument(
   title: string,
   pageCount: number
 ) {
+  if (getPagesMap(doc).size === 0 && pageCount > 0) {
+    Y.applyUpdate(doc, buildSeedUpdate(documentId, pageCount));
+  }
+  // Peer-specific values stay outside the seed; concurrent sets are plain last-writer-wins.
   doc.transact(() => {
     const meta = getMetaMap(doc);
-    if (!meta.has('documentId')) {
-      meta.set('documentId', documentId);
-      meta.set('title', title);
-      meta.set('createdAt', Date.now());
-    }
-
-    const pages = getPagesMap(doc);
-    if (pages.size === 0 && pageCount > 0) {
-      const initialOrders = generateInitialIndices(pageCount);
-      for (let i = 0; i < pageCount; i++) {
-        const pageId = `page-${i}`;
-        const pageMap = new Y.Map<any>();
-        pageMap.set('id', pageId);
-        pageMap.set('originalIndex', i);
-        pageMap.set('order', initialOrders[i]);
-        pageMap.set('rotation', 0);
-        pageMap.set('deleted', false);
-        pages.set(pageId, pageMap);
-      }
-    }
+    if (!meta.has('documentId')) meta.set('documentId', documentId);
+    if (!meta.has('title')) meta.set('title', title);
+    if (!meta.has('createdAt')) meta.set('createdAt', Date.now());
   });
 }
 
@@ -81,7 +107,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
   const meta = {
     documentId: (metaMap.get('documentId') as string) || '',
     title: (metaMap.get('title') as string) || 'Untitled Document',
-    createdAt: (metaMap.get('createdAt') as number) || Date.now(),
+    createdAt: (metaMap.get('createdAt') as number) || 0,
   };
 
   // 1. Pages (sorted by order, filter deleted if needed for viewing)
@@ -96,8 +122,10 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       deleted: Boolean(pageYMap.get('deleted')),
     });
   });
-  // Sort deterministically by fractional index
-  rawPages.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+  // Sort deterministically by fractional index. Concurrent moves can yield equal
+  // keys, and Y.Map iteration order differs per peer, so tie-break on id.
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  rawPages.sort((a, b) => cmp(a.order, b.order) || cmp(a.id, b.id));
 
   // 2. Text Overlays (nested maps with Y.Text)
   const overlaysMap = getTextOverlaysMap(doc);
@@ -231,9 +259,23 @@ export function updateTextOverlayCRDT(
     if (patch.text !== undefined) {
       const existingText = map.get('text');
       if (existingText instanceof Y.Text) {
-        if (existingText.toString() !== patch.text) {
-          existingText.delete(0, existingText.length);
-          existingText.insert(0, patch.text);
+        // Apply only the changed span; delete-all + insert-all duplicates text
+        // when two peers type into the same overlay concurrently.
+        const oldStr = existingText.toString();
+        const newStr = patch.text;
+        if (oldStr !== newStr) {
+          let start = 0;
+          while (start < oldStr.length && start < newStr.length && oldStr[start] === newStr[start]) start++;
+          let end = 0;
+          while (
+            end < oldStr.length - start &&
+            end < newStr.length - start &&
+            oldStr[oldStr.length - 1 - end] === newStr[newStr.length - 1 - end]
+          ) end++;
+          const delLen = oldStr.length - start - end;
+          if (delLen > 0) existingText.delete(start, delLen);
+          const ins = newStr.slice(start, newStr.length - end);
+          if (ins) existingText.insert(start, ins);
         }
       } else {
         const yText = new Y.Text();
