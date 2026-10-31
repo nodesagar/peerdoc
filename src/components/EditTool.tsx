@@ -491,12 +491,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       >
         <Document
           file={pdfBlobUrl}
-          onLoadSuccess={({ numPages: count }) => {
-            setNumPages(count);
-            if (crdt.pages.length === 0) {
-              crdt.initDocument(fileName, count);
-            }
-          }}
+          onLoadSuccess={({ numPages: count }) => setNumPages(count)}
           className="flex flex-col items-center space-y-8"
         >
           {Array.from({ length: numPages }, (_, pageIdx) => {

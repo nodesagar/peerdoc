@@ -37,18 +37,20 @@ export interface UseCRDTSyncOptions {
   pageCount?: number;
 }
 
+const EMPTY_SNAPSHOT: DocumentSnapshot = {
+  meta: { documentId: '', title: '', createdAt: 0 },
+  pages: [],
+  textOverlays: [],
+  whiteouts: [],
+  redactions: [],
+  signatures: [],
+};
+
 export function useCRDTSync(options: UseCRDTSyncOptions) {
   const { documentId, initialPdfBytes, initialTitle, pageCount } = options;
 
   const [doc, setDoc] = useState<Y.Doc | null>(null);
-  const [snapshot, setSnapshot] = useState<DocumentSnapshot>({
-    meta: { documentId: '', title: '', createdAt: 0 },
-    pages: [],
-    textOverlays: [],
-    whiteouts: [],
-    redactions: [],
-    signatures: [],
-  });
+  const [snapshot, setSnapshot] = useState<DocumentSnapshot>(EMPTY_SNAPSHOT);
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('offline');
   const [peerCount, setPeerCount] = useState<number>(0);
@@ -81,6 +83,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   useEffect(() => {
     if (!documentId) {
       setDoc(null);
+      docRef.current = null;
+      setSnapshot(EMPTY_SNAPSHOT);
       setIsLoaded(false);
       setSyncStatus('offline');
       setPeerCount(0);
@@ -93,8 +97,17 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const cleanDocId = documentId.trim().toLowerCase();
     let isCancelled = false;
     const ydoc = new Y.Doc();
+    // Reset everything belonging to the previous document immediately, so tools
+    // never render (or mutate) the old doc's state/bytes under the new room ID.
     setDoc(ydoc);
+    docRef.current = ydoc;
+    setSnapshot(EMPTY_SNAPSHOT);
+    setIsLoaded(false);
+    setSyncStatus('connecting');
+    setPeerCount(0);
     setPdfProgress(null);
+    setRawPdfBytes(initialPdfBytes || null);
+    rawPdfBytesRef.current = initialPdfBytes || null;
 
     // Deep observer callback to re-render UI whenever nested maps change
     const handleDeepChange = () => {
@@ -199,6 +212,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
         providerHandleRef.current.destroy();
         providerHandleRef.current = null;
       }
+      if (docRef.current === ydoc) docRef.current = null;
       ydoc.destroy();
     };
   }, [documentId, pageCount]);
@@ -299,14 +313,6 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     setPageDeletedCRDT(docRef.current, pageId, deleted);
   }, []);
 
-  const initDocument = useCallback(
-    (title: string, count: number) => {
-      if (!docRef.current || !documentId) return;
-      initializeDocument(docRef.current, documentId, title, count);
-    },
-    [documentId]
-  );
-
   const exportSync = useCallback(() => {
     if (!docRef.current || !documentId) return;
     const { blob, filename } = exportSyncFile(docRef.current, documentId);
@@ -316,7 +322,12 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const importSync = useCallback(
     async (file: File) => {
       if (!docRef.current || !documentId) return;
-      await importSyncFile(file, docRef.current, documentId);
+      try {
+        await importSyncFile(file, docRef.current, documentId);
+      } catch (err) {
+        console.error('Failed to import .cdsync file:', err);
+        alert('Could not import sync file: ' + (err instanceof Error ? err.message : err));
+      }
     },
     [documentId]
   );
@@ -356,7 +367,6 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     movePage,
     rotatePage,
     deletePage,
-    initDocument,
     exportSync,
     importSync,
   };

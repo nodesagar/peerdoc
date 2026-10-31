@@ -18,6 +18,27 @@ import { PrivacyModal } from './components/PrivacyModal';
 import { useCRDTSync } from './hooks/useCRDTSync';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
+import { PDFDocument } from 'pdf-lib';
+
+async function countPages(bytes: Uint8Array): Promise<number> {
+  try {
+    return (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+  } catch {
+    return 0;
+  }
+}
+
+/** Accepts a bare SHA-256 room ID or a pasted share link containing ?doc=<id>. */
+function parseRoomId(input: string): string | null {
+  let id = input.trim();
+  try {
+    id = new URL(id).searchParams.get('doc') ?? id;
+  } catch {
+    /* not a URL */
+  }
+  id = id.trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(id) ? id : null;
+}
 
 export default function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>('dashboard');
@@ -38,13 +59,6 @@ export default function App() {
     initialTitle: fileName,
     pageCount,
   });
-
-  // Sync rawPdfBytes from CRDT if received from a peer over P2P chunks
-  useEffect(() => {
-    if (crdt.rawPdfBytes && (!rawPdfBytes || rawPdfBytes !== crdt.rawPdfBytes)) {
-      setRawPdfBytes(crdt.rawPdfBytes);
-    }
-  }, [crdt.rawPdfBytes, rawPdfBytes]);
 
   // Load recent docs history from IndexedDB on startup
   useEffect(() => {
@@ -101,48 +115,51 @@ export default function App() {
   const handleLoadSample = async () => {
     try {
       const sampleBytes = await createSampleConfidentialAgreement();
-      const docId = await computeSHA256(sampleBytes.slice());
-      await storeOriginalPDF(docId, sampleBytes.slice(), 'Confidential_Agreement.pdf');
-
-      setFileName('Confidential_Agreement.pdf');
-      setRawPdfBytes(sampleBytes.slice());
-      setPageCount(2);
-      setDocumentId(docId.toLowerCase());
-      updateUrlDocParam(docId.toLowerCase());
-      setActiveTool('edit');
+      await openDocument(sampleBytes, 'Confidential_Agreement.pdf');
     } catch (err) {
       console.error('Failed to load demo document:', err);
     }
   };
 
+  // All document state is set together after every await, so the CRDT hook never
+  // sees a new room ID paired with the previous document's bytes or page count.
+  const openDocument = async (bytes: Uint8Array, name: string) => {
+    const docId = (await computeSHA256(bytes.slice())).toLowerCase();
+    await storeOriginalPDF(docId, bytes.slice(), name);
+    const count = await countPages(bytes);
+
+    setFileName(name);
+    setRawPdfBytes(bytes.slice());
+    setPageCount(count);
+    setDocumentId(docId);
+    updateUrlDocParam(docId);
+    setActiveTool('edit');
+  };
+
   const handleUploadNewDoc = async (file: File) => {
     try {
       const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const docId = await computeSHA256(bytes.slice());
-      await storeOriginalPDF(docId, bytes.slice(), file.name);
-
-      setFileName(file.name);
-      setRawPdfBytes(bytes.slice());
-      setDocumentId(docId.toLowerCase());
-      updateUrlDocParam(docId.toLowerCase());
-      setActiveTool('edit');
+      await openDocument(new Uint8Array(buffer), file.name);
     } catch (err) {
       console.error('Failed to upload PDF:', err);
     }
   };
 
   const handleJoinRoomId = async (roomId: string) => {
-    const cleanId = roomId.trim().toLowerCase();
+    const cleanId = parseRoomId(roomId);
+    if (!cleanId) {
+      alert('Invalid room ID. Paste the 64-character document ID or a share link containing ?doc=...');
+      return;
+    }
+    const existing = await getOriginalPDF(cleanId);
+    // Joiners never seed pages unless they hold the PDF; otherwise pages arrive from peers.
+    const count = existing?.bytes ? await countPages(existing.bytes) : 0;
+
+    setRawPdfBytes(existing?.bytes ?? null);
+    setFileName(existing?.filename || 'Document.pdf');
+    setPageCount(count);
     setDocumentId(cleanId);
     updateUrlDocParam(cleanId);
-    const existing = await getOriginalPDF(cleanId);
-    if (existing && existing.bytes) {
-      setRawPdfBytes(existing.bytes);
-      setFileName(existing.filename || 'Document.pdf');
-    } else {
-      setRawPdfBytes(null);
-    }
     setActiveTool('edit');
   };
 
@@ -178,7 +195,7 @@ export default function App() {
         {activeTool === 'edit' && (
           <EditTool
             onDocumentProcessed={handleDocumentProcessed}
-            rawPdfBytes={rawPdfBytes}
+            rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
             crdt={crdt}
@@ -189,7 +206,7 @@ export default function App() {
         {activeTool === 'organize' && (
           <OrganizeTool
             onDocumentProcessed={handleDocumentProcessed}
-            rawPdfBytes={rawPdfBytes}
+            rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
             crdt={crdt}
@@ -200,7 +217,7 @@ export default function App() {
         {activeTool === 'redact' && (
           <RedactTool
             onDocumentProcessed={handleDocumentProcessed}
-            rawPdfBytes={rawPdfBytes}
+            rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
             crdt={crdt}
@@ -211,7 +228,7 @@ export default function App() {
         {activeTool === 'sign' && (
           <SignTool
             onDocumentProcessed={handleDocumentProcessed}
-            rawPdfBytes={rawPdfBytes}
+            rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
             crdt={crdt}
@@ -222,7 +239,7 @@ export default function App() {
         {activeTool === 'compress' && (
           <CompressTool
             onDocumentProcessed={handleDocumentProcessed}
-            rawPdfBytes={rawPdfBytes}
+            rawPdfBytes={crdt.rawPdfBytes}
             fileName={fileName}
             crdt={crdt}
           />
