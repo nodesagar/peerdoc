@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
 import {
   ChunkMessage,
   ChunkReassembler,
@@ -9,9 +10,10 @@ import {
   uint8ArrayToBase64,
   normalizeToUint8Array,
 } from './pdfStore';
+import { roomChannel } from './roomKey';
 
 export interface PeerMessage {
-  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable';
+  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable' | 'awareness';
   payload: any;
   /** Sender's engine session ID; lets one remote tab reached over several transports count once. */
   sender?: string;
@@ -44,6 +46,10 @@ export type PdfTransferEvent =
 export interface DocSyncOptions {
   doc: Y.Doc;
   documentId: string;
+  /** Secret from the share link; transports join roomChannel(documentId, roomKey). */
+  roomKey?: string;
+  /** Presence (cursors, names) shared with peers; never persisted. */
+  awareness?: Awareness;
   transports: SyncTransport[];
   getLocalPdfBytes?: () => Uint8Array | null;
   onPeersChange?: (peersCount: number) => void;
@@ -81,6 +87,10 @@ export class DocSyncEngine {
   private serving = new Set<string>(); // links we're currently streaming the PDF to
   private relaySendChain: Promise<unknown> = Promise.resolve(); // one relay upload at a time
   private static RELAY_CHUNK_GAP_MS = 120; // public brokers silently drop faster bursts
+  // Awareness client -> links it was heard on; dropped when its last link leaves.
+  private awarenessLinks = new Map<number, Set<string>>();
+  private relayAwarenessTimer: ReturnType<typeof setTimeout> | null = null;
+  private static RELAY_AWARENESS_INTERVAL_MS = 400;
 
   constructor(options: DocSyncOptions) {
     this.doc = options.doc;
@@ -94,13 +104,14 @@ export class DocSyncEngine {
   private init() {
     // 1. Listen for local Y.Doc mutations and broadcast to peers
     this.doc.on('update', this.handleLocalDocUpdate);
+    this.options.awareness?.on('update', this.handleAwarenessUpdate);
 
     // 2. Initialize all transports
     for (const transport of this.transports) {
       transport.onPeerJoin((peerId) => this.handlePeerJoin(transport, peerId));
       transport.onPeerLeave((peerId) => this.handlePeerLeave(transport, peerId));
       transport.onMessage((peerId, message) => this.handlePeerMessage(transport, peerId, message));
-      transport.connect(this.documentId);
+      transport.connect(this.options.roomKey ? roomChannel(this.documentId, this.options.roomKey) : this.documentId);
     }
 
     // 3. Start PDF polling to guarantee document retrieval when peers connect
@@ -168,6 +179,42 @@ export class DocSyncEngine {
     }
   };
 
+  private handleAwarenessUpdate = (
+    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown
+  ) => {
+    const awareness = this.options.awareness!;
+    if (typeof origin === 'string' && origin.startsWith('link:')) {
+      // Remote change: remember which link carries each client; don't echo it back.
+      const link = origin.slice(5);
+      for (const id of [...added, ...updated]) {
+        if (!this.awarenessLinks.has(id)) this.awarenessLinks.set(id, new Set());
+        this.awarenessLinks.get(id)!.add(link);
+      }
+      removed.forEach((id) => this.awarenessLinks.delete(id));
+      return;
+    }
+    removed.forEach((id) => this.awarenessLinks.delete(id)); // timeouts / leaves
+    // Only our own state goes out (peer timeouts and leaves are local bookkeeping)
+    if (![...added, ...updated, ...removed].includes(awareness.clientID)) return;
+    const message = this.localAwarenessMessage();
+    for (const transport of this.transports) if (!transport.relay) transport.broadcast(message);
+    // Public brokers drop bursts (which could take CRDT updates with them), so the
+    // relay gets at most one presence message per interval, carrying the latest state.
+    if (!this.relayAwarenessTimer && this.transports.some((t) => t.relay)) {
+      this.relayAwarenessTimer = setTimeout(() => {
+        this.relayAwarenessTimer = null;
+        const latest = this.localAwarenessMessage();
+        for (const transport of this.transports) if (transport.relay) transport.broadcast(latest);
+      }, DocSyncEngine.RELAY_AWARENESS_INTERVAL_MS);
+    }
+  };
+
+  private localAwarenessMessage(): PeerMessage {
+    const awareness = this.options.awareness!;
+    return { type: 'awareness', payload: uint8ArrayToBase64(encodeAwarenessUpdate(awareness, [awareness.clientID])) };
+  }
+
   /**
    * On EVERY peer join: Handshake step 1
    * Send local state vector to remote peer so they can send us whatever history we missed.
@@ -186,6 +233,15 @@ export class DocSyncEngine {
       payload: uint8ArrayToBase64(localStateVector),
       sender: this.sessionId,
     });
+
+    // Presence: tell the newcomer who's here right now
+    const awareness = this.options.awareness;
+    if (awareness && awareness.getStates().size > 0) {
+      transport.sendToPeer(peerId, {
+        type: 'awareness',
+        payload: uint8ArrayToBase64(encodeAwarenessUpdate(awareness, [...awareness.getStates().keys()])),
+      });
+    }
 
     // 2. Check if we need the PDF file from this newly joined peer.
     // Relay links never pull the PDF immediately; the poll falls back to them.
@@ -207,8 +263,17 @@ export class DocSyncEngine {
 
   private handlePeerLeave(transport: SyncTransport, peerId: string) {
     if (this.destroyed) return;
-    this.activePeers.delete(`${transport.name}:${peerId}`);
+    const key = `${transport.name}:${peerId}`;
+    this.activePeers.delete(key);
     this.notifyPeers();
+
+    // Remove presence of clients no longer reachable over any link
+    const gone: number[] = [];
+    for (const [clientId, links] of this.awarenessLinks) {
+      links.delete(key);
+      if (links.size === 0) gone.push(clientId);
+    }
+    if (gone.length && this.options.awareness) removeAwarenessStates(this.options.awareness, gone, 'peer-left');
   }
 
   /**
@@ -248,6 +313,14 @@ export class DocSyncEngine {
               payload: uint8ArrayToBase64(fullUpdate),
             });
           }
+        }
+        break;
+      }
+
+      case 'awareness': {
+        const update = normalizeToUint8Array(message.payload);
+        if (update.byteLength > 0 && this.options.awareness) {
+          applyAwarenessUpdate(this.options.awareness, update, `link:${key}`);
         }
         break;
       }
@@ -464,6 +537,18 @@ export class DocSyncEngine {
   }
 
   public destroy() {
+    const awareness = this.options.awareness;
+    if (awareness) {
+      // Announce departure on every transport while they are still open
+      removeAwarenessStates(awareness, [awareness.clientID], 'local');
+      awareness.off('update', this.handleAwarenessUpdate);
+      if (this.relayAwarenessTimer) {
+        clearTimeout(this.relayAwarenessTimer);
+        this.relayAwarenessTimer = null;
+        const goodbye = this.localAwarenessMessage();
+        for (const transport of this.transports) if (transport.relay) transport.broadcast(goodbye);
+      }
+    }
     this.destroyed = true;
     this.stopPdfPolling();
     this.doc.off('update', this.handleLocalDocUpdate);

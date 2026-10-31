@@ -3,7 +3,6 @@ import {
   Users,
   Wifi,
   WifiOff,
-  Copy,
   Check,
   RefreshCw,
   Upload,
@@ -61,7 +60,6 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   onReturnToDashboard,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedId, setCopiedId] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const syncFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -75,23 +73,12 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
 
   const handleCopyLink = () => {
     try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('doc', cleanId);
-      navigator.clipboard.writeText(url.toString());
+      // The address bar holds ?doc=<id>#k=<room key>; that is the invite.
+      navigator.clipboard.writeText(window.location.href);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     } catch (e) {
       console.warn('Failed to copy link:', e);
-    }
-  };
-
-  const handleCopyId = () => {
-    try {
-      navigator.clipboard.writeText(cleanId);
-      setCopiedId(true);
-      setTimeout(() => setCopiedId(false), 2000);
-    } catch (e) {
-      console.warn('Failed to copy ID:', e);
     }
   };
 
@@ -182,7 +169,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               ? asked
                 ? 'Connected to document peers. Waiting for one that has the PDF to accept the request...'
                 : 'Connected to document peers. Requesting the original PDF binary data...'
-              : 'Waiting for the document host to connect. Ensure the person who shared this room ID has EditorDoc open in their browser.'}
+              : 'Waiting for the document host to connect. Ensure the person who shared this link has EditorDoc open in their browser.'}
           </p>
         </div>
 
@@ -243,20 +230,13 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
         {/* Room ID Card & Copy Actions */}
         <div className="bg-[#f4f3f2] rounded-xl p-3 max-w-md mx-auto border border-black/5 space-y-2">
           <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6368]">
-            Active Room ID (SHA-256)
+            Document ID (SHA-256)
           </div>
           <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-black/10 font-mono text-xs text-[#1a1c1c]">
             <span className="truncate mr-2 font-medium" title={cleanId}>
               {shortId}
             </span>
             <div className="flex items-center space-x-1 shrink-0">
-              <button
-                onClick={handleCopyId}
-                className="p-1 hover:bg-black/5 rounded text-[#5f6368] hover:text-[#1a1c1c] transition-colors"
-                title="Copy Room ID"
-              >
-                {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
               <button
                 onClick={handleCopyLink}
                 className="flex items-center space-x-1 bg-[#005db2]/10 hover:bg-[#005db2]/20 text-[#005db2] px-2 py-0.5 rounded text-[11px] font-semibold transition-colors"

@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { PDFDocument, PDFPage, PDFDict, PDFArray, PDFName, PDFNumber, PDFRawStream, PDFHexString, BlendMode, LineCapStyle, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { PDFDocument as PDFDocumentPlus } from 'pdf-lib-plus-encrypt';
 import { PDFMetadataInfo, RedactionBox, WhiteoutBox, TextOverlay, SignatureBox, PageMetadata } from '../types';
 import { DocumentSnapshot } from '../lib/crdt/schema';
@@ -18,13 +18,112 @@ export async function mergePDFs(pdfBuffers: Uint8Array[]): Promise<Uint8Array> {
   return await mergedPdf.save();
 }
 
+export type CompressionLevel = 'low' | 'recommended' | 'extreme';
+
+/** Photos/scans are downscaled to maxPx on their longest side and re-encoded as JPEG. */
+export const COMPRESSION_PRESETS: Record<CompressionLevel, { maxPx: number; quality: number }> = {
+  low: { maxPx: 2400, quality: 0.85 },
+  recommended: { maxPx: 1600, quality: 0.72 },
+  extreme: { maxPx: 1000, quality: 0.5 },
+};
+
+/** Re-encodes one JPEG image; null keeps the original. */
+export type JpegCodec = (
+  jpeg: Uint8Array,
+  maxPx: number,
+  quality: number
+) => Promise<{ bytes: Uint8Array; width: number; height: number } | null>;
+
+export const browserJpegCodec: JpegCodec = async (jpeg, maxPx, quality) => {
+  if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas === 'undefined') return null;
+  const bitmap = await createImageBitmap(new Blob([jpeg as BlobPart], { type: 'image/jpeg' }));
+  try {
+    const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality });
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), width, height };
+  } finally {
+    bitmap.close();
+  }
+};
+
 /**
- * Simulates / performs PDF compression by re-encoding objects, stripping unused objects & metadata
+ * 8-bit RGB/Gray JPEG images only. CMYK JPEGs decode with inverted colours in
+ * some browsers, and Decode arrays, colour-key masks and stencil masks change
+ * how pixel values are interpreted, so those are left untouched.
+ */
+function isRecompressibleJpeg(doc: PDFDocument, dict: PDFDict): boolean {
+  const filter = doc.context.lookup(dict.get(PDFName.of('Filter')));
+  const filters = filter instanceof PDFArray ? filter.asArray() : [filter];
+  if (filters.length !== 1 || filters[0] !== PDFName.of('DCTDecode')) return false;
+  if (dict.has(PDFName.of('Decode')) || dict.has(PDFName.of('Mask')) || dict.has(PDFName.of('ImageMask'))) return false;
+  const bpc = doc.context.lookup(dict.get(PDFName.of('BitsPerComponent')));
+  if (bpc instanceof PDFNumber && bpc.asNumber() !== 8) return false;
+
+  const cs = doc.context.lookup(dict.get(PDFName.of('ColorSpace')));
+  if (cs === PDFName.of('DeviceRGB') || cs === PDFName.of('DeviceGray')) return true;
+  if (cs instanceof PDFArray && cs.get(0) === PDFName.of('ICCBased')) {
+    const profile = doc.context.lookup(cs.get(1));
+    const n = profile instanceof PDFRawStream ? doc.context.lookup(profile.dict.get(PDFName.of('N'))) : undefined;
+    return n instanceof PDFNumber && (n.asNumber() === 3 || n.asNumber() === 1);
+  }
+  return false;
+}
+
+/** Replaces each eligible JPEG image with a smaller re-encoding. Returns how many were replaced. */
+export async function recompressImages(
+  doc: PDFDocument,
+  level: CompressionLevel,
+  codec: JpegCodec = browserJpegCodec
+): Promise<number> {
+  const { maxPx, quality } = COMPRESSION_PRESETS[level];
+  let replaced = 0;
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream) || obj.dict.get(PDFName.of('Subtype')) !== PDFName.of('Image')) continue;
+    if (!isRecompressibleJpeg(doc, obj.dict)) continue;
+
+    let out: Awaited<ReturnType<JpegCodec>> = null;
+    try {
+      out = await codec(obj.contents, maxPx, quality);
+    } catch {
+      continue; // undecodable image: keep it
+    }
+    if (!out || out.bytes.byteLength >= obj.contents.byteLength) continue;
+
+    // Canvas output is always 8-bit RGB JPEG. A soft mask may keep its own size.
+    const image = doc.context.stream(out.bytes, {
+      Type: 'XObject',
+      Subtype: 'Image',
+      Width: out.width,
+      Height: out.height,
+      ColorSpace: 'DeviceRGB',
+      BitsPerComponent: 8,
+      Filter: 'DCTDecode',
+    });
+    for (const key of ['SMask', 'Interpolate', 'Intent']) {
+      const value = obj.dict.get(PDFName.of(key));
+      if (value) image.dict.set(PDFName.of(key), value);
+    }
+    doc.context.assign(ref, image);
+    replaced++;
+  }
+  return replaced;
+}
+
+/**
+ * Compresses by re-encoding photos/scans per level, packing objects into
+ * object streams and stripping metadata. Never returns a larger file.
  */
 export async function compressPDF(
   pdfBuffer: Uint8Array,
-  quality: 'recommended' | 'extreme' | 'low' = 'recommended'
-): Promise<{ compressedBuffer: Uint8Array; originalSizeBytes: number; compressedSizeBytes: number }> {
+  level: CompressionLevel = 'recommended',
+  codec: JpegCodec = browserJpegCodec
+): Promise<{ compressedBuffer: Uint8Array; originalSizeBytes: number; compressedSizeBytes: number; imagesRecompressed: number }> {
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
 
   // Strip non-essential metadata
@@ -33,15 +132,15 @@ export async function compressPDF(
   pdfDoc.setProducer('EditorDoc P2P Optimizer');
   pdfDoc.setKeywords([]);
 
-  const compressedBuffer = await pdfDoc.save({ useObjectStreams: true });
-  const originalSizeBytes = pdfBuffer.byteLength;
-  // Report the real size; never invent savings.
-  const compressedSizeBytes = compressedBuffer.byteLength;
+  const imagesRecompressed = await recompressImages(pdfDoc, level, codec);
+  const saved = await pdfDoc.save({ useObjectStreams: true });
+  const compressedBuffer = saved.byteLength < pdfBuffer.byteLength ? saved : pdfBuffer;
 
   return {
     compressedBuffer,
-    originalSizeBytes,
-    compressedSizeBytes,
+    originalSizeBytes: pdfBuffer.byteLength,
+    compressedSizeBytes: compressedBuffer.byteLength,
+    imagesRecompressed,
   };
 }
 
@@ -330,7 +429,54 @@ export async function buildConvergedPDF(
     }
   }
 
+  // 6. Review annotations: markup is drawn into the page (visible in every viewer);
+  // each open comment thread also becomes a real PDF sticky note.
+  for (const a of snapshot.annotations) {
+    const targetIdx = activePages.findIndex((p) => p.originalIndex === a.pageIndex);
+    if (targetIdx < 0 || targetIdx >= finalPages.length) continue;
+    const page = finalPages[targetIdx];
+    const frame = frameOf(targetIdx);
+    const color = hexToRgb(a.color);
+
+    if (a.type === 'highlight') {
+      page.drawRectangle({ ...frame.rect(a), color, opacity: 0.35, blendMode: BlendMode.Multiply });
+    } else if (a.type === 'box') {
+      page.drawRectangle({ ...frame.rect(a), borderColor: color, borderWidth: 2 });
+    } else if (a.type === 'ink' && a.points && a.points.length >= 4) {
+      const pts = a.points;
+      const at = (i: number) => {
+        const [x, y] = frame.toPdf((pts[i] / 100) * frame.width, (pts[i + 1] / 100) * frame.height);
+        return { x, y };
+      };
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        page.drawLine({ start: at(i), end: at(i + 2), thickness: 2, color, lineCap: LineCapStyle.Round });
+      }
+    }
+
+    const thread = snapshot.comments.filter((c) => c.annotationId === a.id);
+    if (!a.resolved && thread.length > 0) {
+      const [x, y] = frame.toPdf((a.x / 100) * frame.width, (a.y / 100) * frame.height);
+      const note = newDoc.context.obj({
+        Type: 'Annot',
+        Subtype: 'Text',
+        Rect: [x, y - 20, x + 20, y],
+        Contents: PDFHexString.fromText(thread.map((c) => `${c.createdBy ?? 'Someone'}: ${c.text}`).join('\n\n')),
+        T: PDFHexString.fromText(thread[0].createdBy ?? 'EditorDoc'),
+        Name: 'Comment',
+        C: [color.red, color.green, color.blue],
+        F: 4, // print
+        Open: false,
+      });
+      page.node.addAnnot(newDoc.context.register(note));
+    }
+  }
+
   return await newDoc.save();
+}
+
+function hexToRgb(hex: string | undefined) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? '');
+  return m ? rgb(parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255) : rgb(0.98, 0.67, 0);
 }
 
 /**
@@ -348,6 +494,8 @@ export async function editPDF(
     whiteouts,
     redactions: [],
     signatures: [],
+    annotations: [],
+    comments: [],
   };
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   dummySnapshot.pages = pdfDoc.getPageIndices().map((idx) => ({
@@ -375,6 +523,8 @@ export async function redactPDF(
     whiteouts: [],
     redactions,
     signatures: [],
+    annotations: [],
+    comments: [],
   };
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   dummySnapshot.pages = pdfDoc.getPageIndices().map((idx) => ({

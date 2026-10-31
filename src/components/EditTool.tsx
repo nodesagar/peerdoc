@@ -16,12 +16,70 @@ import {
   ChevronDown,
   Download,
   Share2,
+  Highlighter,
+  Square,
+  PenLine,
+  MessageSquarePlus,
+  MessagesSquare,
 } from 'lucide-react';
+import { AnnotationLayer, CommentsPanel, ANNOTATION_COLORS } from './Annotations';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
 import { SyncWaitingCard } from './SyncWaitingCard';
+import type { Awareness } from 'y-protocols/awareness';
+import { usePeers, attributionTitle, Peer, PresenceState } from '../lib/presence';
+
+/** Live pointers of collaborators on one page. Own subscription: moves don't re-render the editor. */
+const PeerCursors: React.FC<{ awareness: Awareness | null; pageIndex: number }> = ({ awareness, pageIndex }) => {
+  const cursors = usePeers(awareness, (peers) =>
+    peers
+      .filter((p) => p.tool === 'edit' && p.cursor?.pageIndex === pageIndex)
+      .map((p) => ({ id: p.clientId, name: p.user.name, color: p.user.color, x: p.cursor!.x, y: p.cursor!.y }))
+  );
+  return (
+    <>
+      {cursors.map((c) => (
+        <div
+          key={c.id}
+          aria-hidden
+          className="absolute z-20 pointer-events-none transition-[left,top] duration-100 ease-linear"
+          style={{ left: `${c.x}%`, top: `${c.y}%` }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" style={{ color: c.color }}>
+            <path d="M1 1l5.5 13 2-5.5L14 6.5z" fill="currentColor" stroke="white" strokeWidth="1" />
+          </svg>
+          <span
+            className="absolute left-3.5 top-3.5 whitespace-nowrap text-[10px] font-semibold text-white px-1.5 py-0.5 rounded"
+            style={{ backgroundColor: c.color }}
+          >
+            {c.name}
+          </span>
+        </div>
+      ))}
+    </>
+  );
+};
+
+/** overlay id -> collaborator who has it selected */
+const selectPeerSelections = (peers: Peer[]) =>
+  Object.fromEntries(
+    peers.filter((p) => p.tool === 'edit' && p.selection).map((p) => [p.selection!, { name: p.user.name, color: p.user.color }])
+  );
+
+const PeerTag: React.FC<{ peer?: { name: string; color: string } }> = ({ peer }) =>
+  peer ? (
+    <span
+      className="absolute -top-4 left-0 whitespace-nowrap text-[9px] font-semibold text-white px-1 rounded-sm pointer-events-none"
+      style={{ backgroundColor: peer.color }}
+    >
+      {peer.name}
+    </span>
+  ) : null;
+
+const peerOutline = (peer?: { color: string }): React.CSSProperties =>
+  peer ? { outline: `2px solid ${peer.color}`, outlineOffset: 1 } : {};
 
 const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string) => void }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -66,6 +124,15 @@ const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string
   );
 };
 
+type EditorMode = 'text' | 'eraser' | 'highlight' | 'box' | 'ink' | 'note';
+
+const REVIEW_MODES: { mode: EditorMode; label: string; Icon: React.FC<{ className?: string }> }[] = [
+  { mode: 'highlight', label: 'Highlight', Icon: Highlighter },
+  { mode: 'box', label: 'Box', Icon: Square },
+  { mode: 'ink', label: 'Draw', Icon: PenLine },
+  { mode: 'note', label: 'Note', Icon: MessageSquarePlus },
+];
+
 interface EditToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
   rawPdfBytes: Uint8Array | null;
@@ -83,7 +150,26 @@ export const EditTool: React.FC<EditToolProps> = ({
   crdt,
   onUploadFile,
 }) => {
-  const [activeTool, setActiveTool] = useState<'text' | 'eraser'>('text');
+  const [activeTool, setActiveTool] = useState<EditorMode>('text');
+  const isRectMode = activeTool === 'eraser' || activeTool === 'highlight' || activeTool === 'box';
+
+  // Review markup
+  const [annotationColor, setAnnotationColor] = useState(ANNOTATION_COLORS[0]);
+  const [activeAnnotationId, setActiveAnnotationId] = useState<string | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [focusReplyFor, setFocusReplyFor] = useState<string | null>(null);
+  const [draftInk, setDraftInk] = useState<{ pageIndex: number; points: number[] } | null>(null);
+  const commentCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of crdt.comments) counts[c.annotationId] = (counts[c.annotationId] ?? 0) + 1;
+    return counts;
+  }, [crdt.comments]);
+  const openThread = (id: string, focusReply = false) => {
+    setActiveAnnotationId(id);
+    setActiveTextId(null);
+    setPanelOpen(true);
+    setFocusReplyFor(focusReply ? id : null);
+  };
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [scrollMode, setScrollMode] = useState<'normal' | 'page'>('normal');
 
@@ -111,6 +197,55 @@ export const EditTool: React.FC<EditToolProps> = ({
     color: '#1a1c1c',
   });
   const [eraserColor, setEraserColor] = useState('#ffffff');
+
+  // Presence: what we point at and select; what collaborators have selected
+  const { setPresence, awareness } = crdt;
+  const peerSelections = usePeers(awareness, selectPeerSelections);
+  const selectedId = activeTextId ?? draggingEraserId ?? activeAnnotationId;
+  useEffect(() => {
+    setPresence({ selection: selectedId });
+  }, [setPresence, awareness, selectedId]);
+
+  // Cursor updates are coalesced: at most ~8 per second leave this tab
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCursor = useRef<PresenceState['cursor']>(null);
+  const publishCursor = (cursor: PresenceState['cursor']) => {
+    pendingCursor.current = cursor;
+    if (cursorTimer.current) return;
+    cursorTimer.current = setTimeout(() => {
+      cursorTimer.current = null;
+      setPresence({ cursor: pendingCursor.current });
+    }, 120);
+  };
+  useEffect(
+    () => () => {
+      if (cursorTimer.current) clearTimeout(cursorTimer.current);
+      setPresence({ cursor: null, selection: null });
+    },
+    [setPresence]
+  );
+
+  const openThreads = crdt.annotations.filter((a) => !a.resolved && commentCounts[a.id]).length;
+
+  // Undo or a peer may delete what we had selected
+  useEffect(() => {
+    if (activeAnnotationId && !crdt.annotations.some((a) => a.id === activeAnnotationId)) setActiveAnnotationId(null);
+  }, [activeAnnotationId, crdt.annotations]);
+
+  // Delete removes the selected markup (outside text fields)
+  useEffect(() => {
+    if (!activeAnnotationId) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        crdt.removeAnnotation(activeAnnotationId);
+        setActiveAnnotationId(null);
+      } else if (e.key === 'Escape') setActiveAnnotationId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeAnnotationId, crdt.removeAnnotation]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -172,6 +307,16 @@ export const EditTool: React.FC<EditToolProps> = ({
       return;
     }
 
+    const annotationEl = target.closest('.annotation-node');
+    if (annotationEl) {
+      const id = annotationEl.getAttribute('data-id');
+      if (id) {
+        openThread(id);
+        return;
+      }
+    }
+    setActiveAnnotationId(null);
+
     const eraserEl = target.closest('.eraser-node');
     if (eraserEl) {
       const id = eraserEl.getAttribute('data-id');
@@ -201,12 +346,20 @@ export const EditTool: React.FC<EditToolProps> = ({
     }
 
     // Canvas click
-    if (activeTool === 'eraser') {
+    if (isRectMode) {
       setIsDrawing(true);
       const { x, y } = getCoordinates(e, canvasEl);
       setStartX(x);
       setStartY(y);
       setCurrentBox({ x, y, w: 0, h: 0, pageIndex });
+    } else if (activeTool === 'ink') {
+      setIsDrawing(true);
+      const { x, y } = getCoordinates(e, canvasEl);
+      setDraftInk({ pageIndex, points: [x, y] });
+    } else if (activeTool === 'note') {
+      const { x, y } = getCoordinates(e, canvasEl);
+      const id = crdt.addAnnotation({ type: 'note', pageIndex, x, y, width: 0, height: 0, color: annotationColor });
+      if (id) openThread(id, true);
     } else if (activeTool === 'text') {
       const { x, y } = getCoordinates(e, canvasEl);
       const newId = crdt.addTextOverlay({
@@ -250,7 +403,16 @@ export const EditTool: React.FC<EditToolProps> = ({
       return;
     }
 
-    if (isDrawing && activeTool === 'eraser' && currentBox) {
+    if (isDrawing && activeTool === 'ink') {
+      setDraftInk((d) => {
+        if (!d) return d;
+        const [lx, ly] = d.points.slice(-2);
+        return Math.hypot(x - lx, y - ly) < 0.4 ? d : { ...d, points: [...d.points, x, y] };
+      });
+      return;
+    }
+
+    if (isDrawing && isRectMode && currentBox) {
       setCurrentBox({
         ...currentBox,
         x: Math.min(startX, x),
@@ -275,9 +437,36 @@ export const EditTool: React.FC<EditToolProps> = ({
         height: currentBox.h,
         color: eraserColor,
       });
+    } else if (isDrawing && (activeTool === 'highlight' || activeTool === 'box') && currentBox && currentBox.w > 0.5 && currentBox.h > 0.5) {
+      const id = crdt.addAnnotation({
+        type: activeTool,
+        pageIndex: currentBox.pageIndex,
+        x: currentBox.x,
+        y: currentBox.y,
+        width: currentBox.w,
+        height: currentBox.h,
+        color: annotationColor,
+      });
+      if (id) setActiveAnnotationId(id);
+    } else if (isDrawing && activeTool === 'ink' && draftInk && draftInk.points.length >= 4) {
+      const xs = draftInk.points.filter((_, i) => i % 2 === 0);
+      const ys = draftInk.points.filter((_, i) => i % 2 === 1);
+      const [minX, minY] = [Math.min(...xs), Math.min(...ys)];
+      const id = crdt.addAnnotation({
+        type: 'ink',
+        pageIndex: draftInk.pageIndex,
+        x: minX,
+        y: minY,
+        width: Math.max(...xs) - minX,
+        height: Math.max(...ys) - minY,
+        color: annotationColor,
+        points: draftInk.points.map((v) => Math.round(v * 100) / 100),
+      });
+      if (id) setActiveAnnotationId(id);
     }
     setIsDrawing(false);
     setCurrentBox(null);
+    setDraftInk(null);
   };
 
   const applyTextUpdate = (updates: Partial<TextOverlay>) => {
@@ -380,6 +569,40 @@ export const EditTool: React.FC<EditToolProps> = ({
             </button>
           </div>
 
+          {/* Review markup */}
+          <div className="flex bg-[#f4f3f2] p-1 rounded-xl border border-black/5" role="group" aria-label="Review tools">
+            {REVIEW_MODES.map(({ mode, label, Icon }) => (
+              <button
+                key={mode}
+                onClick={() => setActiveTool(mode)}
+                aria-pressed={activeTool === mode}
+                title={label}
+                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  activeTool === mode ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">{label}</span>
+              </button>
+            ))}
+          </div>
+
+          {(activeTool === 'highlight' || activeTool === 'box' || activeTool === 'ink' || activeTool === 'note') && (
+            <div className="flex items-center space-x-1 pl-2 border-l border-black/10" role="radiogroup" aria-label="Markup colour">
+              {ANNOTATION_COLORS.map((c) => (
+                <button
+                  key={c}
+                  role="radio"
+                  aria-checked={annotationColor === c}
+                  aria-label={c}
+                  onClick={() => setAnnotationColor(c)}
+                  className={`w-5 h-5 rounded-full border ${annotationColor === c ? 'ring-2 ring-[#005db2]' : 'border-black/20'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          )}
+
           {/* Text options if active */}
           {activeTool === 'text' && (
             <div className="flex items-center space-x-2 pl-2 border-l border-black/10">
@@ -474,6 +697,17 @@ export const EditTool: React.FC<EditToolProps> = ({
           </div>
 
           <button
+            onClick={() => setPanelOpen((o) => !o)}
+            aria-pressed={panelOpen}
+            className={`flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors ${
+              panelOpen ? 'bg-[#005db2]/10 border-[#005db2]/30 text-[#005db2]' : 'border-black/10 text-[#414753] hover:bg-black/5'
+            }`}
+          >
+            <MessagesSquare className="w-3.5 h-3.5" />
+            <span>Comments{openThreads ? ` (${openThreads})` : ''}</span>
+          </button>
+
+          <button
             onClick={handleExportPDF}
             disabled={processing}
             className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
@@ -484,6 +718,7 @@ export const EditTool: React.FC<EditToolProps> = ({
         </div>
       </div>
 
+      <div className="flex-1 flex min-h-0">
       {/* Canvas Viewport */}
       <div
         ref={containerRef}
@@ -509,6 +744,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 style={{
                   transform: `scale(${zoomLevel / 100})`,
                   transformOrigin: 'top center',
+                  touchAction: isRectMode || activeTool === 'ink' ? 'none' : undefined, // drawing, not scrolling
                   marginBottom: `${(zoomLevel / 100 - 1) * 300}px`,
                 }}
                 onPointerDown={(e) => {
@@ -517,8 +753,11 @@ export const EditTool: React.FC<EditToolProps> = ({
                 }}
                 onPointerMove={(e) => {
                   const targetCanvas = pageRefs.current[pageIdx];
-                  if (targetCanvas) handlePointerMove(e, targetCanvas);
+                  if (!targetCanvas) return;
+                  handlePointerMove(e, targetCanvas);
+                  publishCursor({ pageIndex: pageIdx, ...getCoordinates(e, targetCanvas) });
                 }}
+                onPointerLeave={() => publishCursor(null)}
               >
                 <Page
                   pageNumber={pageIdx + 1}
@@ -527,20 +766,32 @@ export const EditTool: React.FC<EditToolProps> = ({
                   className="pointer-events-none"
                 />
 
+                <AnnotationLayer
+                  annotations={crdt.annotations.filter((a) => a.pageIndex === pageIdx)}
+                  commentCounts={commentCounts}
+                  selectedId={activeAnnotationId}
+                  peerSelections={peerSelections}
+                  draftInk={draftInk?.pageIndex === pageIdx ? draftInk.points : null}
+                  draftColor={annotationColor}
+                />
+
                 {/* Whiteouts layer */}
                 {pageWhiteouts.map((w) => (
                   <div
                     key={w.id}
                     data-id={w.id}
                     className="eraser-node absolute cursor-move border border-dashed border-black/20 hover:border-black/50 group"
+                    title={attributionTitle(w)}
                     style={{
                       left: `${w.x}%`,
                       top: `${w.y}%`,
                       width: `${w.width}%`,
                       height: `${w.height}%`,
                       backgroundColor: w.color || '#ffffff',
+                      ...peerOutline(peerSelections[w.id]),
                     }}
                   >
+                    <PeerTag peer={peerSelections[w.id]} />
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -556,14 +807,17 @@ export const EditTool: React.FC<EditToolProps> = ({
                 {/* In-progress drawing whiteout box */}
                 {isDrawing && currentBox && currentBox.pageIndex === pageIdx && (
                   <div
-                    className="absolute pointer-events-none border border-emerald-500"
+                    className="absolute pointer-events-none border"
                     style={{
                       left: `${currentBox.x}%`,
                       top: `${currentBox.y}%`,
                       width: `${currentBox.w}%`,
                       height: `${currentBox.h}%`,
-                      backgroundColor: eraserColor,
-                      opacity: 0.8,
+                      ...(activeTool === 'eraser'
+                        ? { backgroundColor: eraserColor, opacity: 0.8, borderColor: '#10b981' }
+                        : activeTool === 'highlight'
+                          ? { backgroundColor: annotationColor, opacity: 0.35, borderColor: 'transparent' }
+                          : { borderColor: annotationColor, borderWidth: 2 }),
                     }}
                   />
                 )}
@@ -576,6 +830,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                     className={`text-overlay-node absolute cursor-move group px-1 py-0.5 rounded border transition-colors ${
                       activeTextId === t.id ? 'border-[#005db2] bg-blue-50/20' : 'border-transparent hover:border-black/20'
                     }`}
+                    title={attributionTitle(t)}
                     style={{
                       left: `${t.x}%`,
                       top: `${t.y}%`,
@@ -584,8 +839,10 @@ export const EditTool: React.FC<EditToolProps> = ({
                       fontWeight: t.isBold ? 'bold' : 'normal',
                       fontStyle: t.isItalic ? 'italic' : 'normal',
                       color: t.color || '#1a1c1c',
+                      ...peerOutline(peerSelections[t.id]),
                     }}
                   >
+                    <PeerTag peer={peerSelections[t.id]} />
                     <input
                       type="text"
                       value={t.text}
@@ -605,10 +862,36 @@ export const EditTool: React.FC<EditToolProps> = ({
                     </button>
                   </div>
                 ))}
+
+                <PeerCursors awareness={awareness} pageIndex={pageIdx} />
               </div>
             );
           })}
         </Document>
+      </div>
+
+      {panelOpen && (
+        <CommentsPanel
+          annotations={crdt.annotations}
+          comments={crdt.comments}
+          selectedId={activeAnnotationId}
+          focusReplyFor={focusReplyFor}
+          peerSelections={peerSelections}
+          onSelect={(id) => {
+            setActiveAnnotationId(id);
+            const a = crdt.annotations.find((x) => x.id === id);
+            if (a) pageRefs.current[a.pageIndex]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }}
+          onReply={crdt.addComment}
+          onResolve={(id, resolved) => crdt.updateAnnotation(id, { resolved })}
+          onDelete={(id) => {
+            crdt.removeAnnotation(id);
+            if (activeAnnotationId === id) setActiveAnnotationId(null);
+          }}
+          onDeleteComment={crdt.removeComment}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { generateFractionalIndex, generateInitialIndices } from './fractionalIndex';
-import { PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
+import { Annotation, ThreadComment, Attribution, PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
 
 export interface DocumentSnapshot {
   meta: {
@@ -13,6 +13,8 @@ export interface DocumentSnapshot {
   whiteouts: WhiteoutBox[];
   redactions: RedactionBox[];
   signatures: SignatureBox[];
+  annotations: Annotation[];
+  comments: ThreadComment[];
 }
 
 export function getMetaMap(doc: Y.Doc): Y.Map<any> {
@@ -37,6 +39,31 @@ export function getRedactionsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
 
 export function getSignaturesMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
   return doc.getMap('signatures');
+}
+
+export function getAnnotationsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
+  return doc.getMap('annotations');
+}
+
+export function getCommentsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
+  return doc.getMap('comments');
+}
+
+/**
+ * Undo/redo for this user's edits only. Local mutations use origin null (the
+ * UndoManager default); peer updates ('p2p'), IndexedDB loads, .cdsync imports
+ * ('file-sync') and seeding (SEED_ORIGIN) carry other origins and are skipped.
+ */
+export function createUndoManager(doc: Y.Doc): Y.UndoManager {
+  return new Y.UndoManager([
+    getPagesMap(doc),
+    getTextOverlaysMap(doc),
+    getWhiteoutsMap(doc),
+    getRedactionsMap(doc),
+    getSignaturesMap(doc),
+    getAnnotationsMap(doc),
+    getCommentsMap(doc),
+  ]);
 }
 
 /** FNV-1a 32-bit; stable non-zero Yjs client ID derived from the document ID. */
@@ -78,6 +105,9 @@ function buildSeedUpdate(documentId: string, pageCount: number): Uint8Array {
   return update;
 }
 
+/** Origin of document setup; the undo manager only tracks user edits (origin null). */
+export const SEED_ORIGIN = 'seed';
+
 /**
  * Initialize document metadata and pages if doc is newly created.
  */
@@ -88,7 +118,7 @@ export function initializeDocument(
   pageCount: number
 ) {
   if (getPagesMap(doc).size === 0 && pageCount > 0) {
-    Y.applyUpdate(doc, buildSeedUpdate(documentId, pageCount));
+    Y.applyUpdate(doc, buildSeedUpdate(documentId, pageCount), SEED_ORIGIN);
   }
   // Peer-specific values stay outside the seed; concurrent sets are plain last-writer-wins.
   doc.transact(() => {
@@ -96,7 +126,7 @@ export function initializeDocument(
     if (!meta.has('documentId')) meta.set('documentId', documentId);
     if (!meta.has('title')) meta.set('title', title);
     if (!meta.has('createdAt')) meta.set('createdAt', Date.now());
-  });
+  }, SEED_ORIGIN);
 }
 
 /**
@@ -150,6 +180,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       fontFamily: overlayMap.get('fontFamily') as any,
       isBold: Boolean(overlayMap.get('isBold')),
       isItalic: Boolean(overlayMap.get('isItalic')),
+      ...readAttribution(overlayMap),
     });
   });
 
@@ -165,6 +196,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (wMap.get('width') as number) ?? 10,
       height: (wMap.get('height') as number) ?? 5,
       color: (wMap.get('color') as string) || '#ffffff',
+      ...readAttribution(wMap),
     });
   });
 
@@ -180,6 +212,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (rMap.get('width') as number) ?? 10,
       height: (rMap.get('height') as number) ?? 5,
       label: rMap.get('label') as string,
+      ...readAttribution(rMap),
     });
   });
 
@@ -195,8 +228,40 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       width: (sMap.get('width') as number) ?? 20,
       height: (sMap.get('height') as number) ?? 10,
       dataUrl: (sMap.get('dataUrl') as string) || '',
+      ...readAttribution(sMap),
     });
   });
+
+  // 6. Annotations and their comment threads
+  const annotations: Annotation[] = [];
+  getAnnotationsMap(doc).forEach((aMap, id) => {
+    const points = aMap.get('points');
+    annotations.push({
+      id: (aMap.get('id') as string) || id,
+      type: (aMap.get('type') as Annotation['type']) || 'note',
+      pageIndex: (aMap.get('pageIndex') as number) ?? 0,
+      x: (aMap.get('x') as number) ?? 0,
+      y: (aMap.get('y') as number) ?? 0,
+      width: (aMap.get('width') as number) ?? 0,
+      height: (aMap.get('height') as number) ?? 0,
+      color: (aMap.get('color') as string) || '#f9ab00',
+      ...(Array.isArray(points) ? { points: points as number[] } : {}),
+      resolved: Boolean(aMap.get('resolved')),
+      ...readAttribution(aMap),
+    });
+  });
+
+  const comments: ThreadComment[] = [];
+  getCommentsMap(doc).forEach((cMap, id) => {
+    comments.push({
+      id: (cMap.get('id') as string) || id,
+      annotationId: (cMap.get('annotationId') as string) || '',
+      text: (cMap.get('text') as string) || '',
+      ...readAttribution(cMap),
+    });
+  });
+  // Thread order: oldest first; id breaks ties identically on every peer
+  comments.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   return {
     meta,
@@ -205,7 +270,23 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
     whiteouts,
     redactions,
     signatures,
+    annotations,
+    comments,
   };
+}
+
+function writeAttribution(map: Y.Map<any>, item: Attribution) {
+  if (item.createdBy) map.set('createdBy', item.createdBy);
+  if (item.createdByColor) map.set('createdByColor', item.createdByColor);
+  if (item.createdAt) map.set('createdAt', item.createdAt);
+}
+
+function readAttribution(map: Y.Map<any>): Attribution {
+  const out: Attribution = {};
+  if (typeof map.get('createdBy') === 'string') out.createdBy = map.get('createdBy');
+  if (typeof map.get('createdByColor') === 'string') out.createdByColor = map.get('createdByColor');
+  if (typeof map.get('createdAt') === 'number') out.createdAt = map.get('createdAt');
+  return out;
 }
 
 // ================= Mutations helpers with nested Y.Maps =================
@@ -232,6 +313,7 @@ export function addTextOverlayCRDT(
     yText.insert(0, overlay.text || '');
     map.set('text', yText);
 
+    writeAttribution(map, overlay);
     overlays.set(id, map);
   });
   return id;
@@ -308,6 +390,7 @@ export function addWhiteoutCRDT(
     map.set('width', box.width);
     map.set('height', box.height);
     map.set('color', box.color || '#ffffff');
+    writeAttribution(map, box);
     whiteouts.set(id, map);
   });
   return id;
@@ -354,6 +437,7 @@ export function addRedactionCRDT(
     map.set('width', redaction.width);
     map.set('height', redaction.height);
     if (redaction.label) map.set('label', redaction.label);
+    writeAttribution(map, redaction);
     redactions.set(id, map);
   });
   return id;
@@ -381,6 +465,7 @@ export function addSignatureCRDT(
     map.set('width', sig.width);
     map.set('height', sig.height);
     map.set('dataUrl', sig.dataUrl);
+    writeAttribution(map, sig);
     signatures.set(id, map);
   });
   return id;
@@ -457,5 +542,69 @@ export function setPageDeletedCRDT(
     if (!pageMap) return;
 
     pageMap.set('deleted', deleted);
+  });
+}
+
+// ================= Annotations & comment threads =================
+
+export function addAnnotationCRDT(doc: Y.Doc, a: Omit<Annotation, 'id'> & { id?: string }): string {
+  const id = a.id || crypto.randomUUID();
+  doc.transact(() => {
+    const map = new Y.Map<any>();
+    map.set('id', id);
+    map.set('type', a.type);
+    map.set('pageIndex', a.pageIndex);
+    map.set('x', a.x);
+    map.set('y', a.y);
+    map.set('width', a.width);
+    map.set('height', a.height);
+    map.set('color', a.color);
+    if (a.points) map.set('points', [...a.points]);
+    map.set('resolved', Boolean(a.resolved));
+    writeAttribution(map, a);
+    getAnnotationsMap(doc).set(id, map);
+  });
+  return id;
+}
+
+export function updateAnnotationCRDT(
+  doc: Y.Doc,
+  id: string,
+  patch: Partial<Pick<Annotation, 'x' | 'y' | 'width' | 'height' | 'color' | 'resolved'>>
+) {
+  doc.transact(() => {
+    const map = getAnnotationsMap(doc).get(id);
+    if (!map) return;
+    for (const [key, value] of Object.entries(patch)) if (value !== undefined) map.set(key, value);
+  });
+}
+
+/** Removes the annotation and its whole thread in one undoable step. */
+export function removeAnnotationCRDT(doc: Y.Doc, id: string) {
+  doc.transact(() => {
+    getAnnotationsMap(doc).delete(id);
+    const comments = getCommentsMap(doc);
+    comments.forEach((c, cid) => {
+      if (c.get('annotationId') === id) comments.delete(cid);
+    });
+  });
+}
+
+export function addCommentCRDT(doc: Y.Doc, c: Omit<ThreadComment, 'id'> & { id?: string }): string {
+  const id = c.id || crypto.randomUUID();
+  doc.transact(() => {
+    const map = new Y.Map<any>();
+    map.set('id', id);
+    map.set('annotationId', c.annotationId);
+    map.set('text', c.text);
+    writeAttribution(map, c);
+    getCommentsMap(doc).set(id, map);
+  });
+  return id;
+}
+
+export function removeCommentCRDT(doc: Y.Doc, id: string) {
+  doc.transact(() => {
+    getCommentsMap(doc).delete(id);
   });
 }

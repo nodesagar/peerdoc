@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ActiveTool, SyncStatus } from '../types';
 import { ShieldCheck, Menu, X } from 'lucide-react';
-import { CollaborationBar } from './CollaborationBar';
+import { pressable } from '../lib/pressable';
+import { CollaborationBar, PresenceProps } from './CollaborationBar';
 
 interface HeaderProps {
   activeTool: ActiveTool;
@@ -13,6 +14,11 @@ interface HeaderProps {
   servingCount?: number;
   onExportSync: () => void;
   onImportSync: (file: File) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  presence: PresenceProps;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,7 +31,25 @@ export const Header: React.FC<HeaderProps> = ({
   servingCount,
   onExportSync,
   onImportSync,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  presence,
 }) => {
+  const navItems: { tool: ActiveTool; label: string }[] = documentId
+    ? [
+        { tool: 'dashboard', label: 'Dashboard' },
+        { tool: 'edit', label: 'Edit' },
+        { tool: 'organize', label: 'Organize' },
+        { tool: 'redact', label: 'Redact' },
+        { tool: 'sign', label: 'Sign' },
+      ]
+    : [
+        { tool: 'dashboard', label: 'Dashboard' },
+        { tool: 'edit', label: 'Edit' },
+      ];
+  const syncFileRef = useRef<HTMLInputElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -43,11 +67,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left: Brand Logo + Nav Links */}
         <div className="flex items-center space-x-6">
           <div
-            onClick={() => {
+            {...pressable(() => {
               setActiveTool('dashboard');
               setIsMobileMenuOpen(false);
-            }}
-            className="flex items-center space-x-2.5 cursor-pointer group shrink-0"
+            })}
+            aria-label="EditorDoc home"
+            className="flex items-center space-x-2.5 cursor-pointer group shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
           >
             <div className="w-8 h-8 rounded-lg bg-[#005db2] flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105">
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -57,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <path d="M8 15h8" />
               </svg>
             </div>
-            <div className="flex items-center space-x-1.5">
+            <div className="hidden lg:flex items-center space-x-1.5">
               <span className="text-lg font-bold tracking-tight text-[#1a1c1c] font-sans">
                 EditorDoc
               </span>
@@ -67,29 +92,22 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Navigation Links (Only Dashboard and Edit) */}
-          <nav className="hidden sm:flex items-center space-x-1 text-sm font-medium text-[#414753]">
-            <button
-              onClick={() => setActiveTool('dashboard')}
-              className={`px-3 py-1.5 rounded-lg transition-colors ${
-                activeTool === 'dashboard'
-                  ? 'text-[#005db2] font-semibold bg-[#005db2]/10'
-                  : 'hover:text-[#1a1c1c] hover:bg-black/5'
-              }`}
-            >
-              Dashboard
-            </button>
-
-            <button
-              onClick={() => setActiveTool('edit')}
-              className={`px-3 py-1.5 rounded-lg transition-colors ${
-                activeTool === 'edit'
-                  ? 'text-[#005db2] font-semibold bg-[#005db2]/10'
-                  : 'hover:text-[#1a1c1c] hover:bg-black/5'
-              }`}
-            >
-              Edit
-            </button>
+          {/* Room tools appear once a document is open */}
+          <nav className="hidden xl:flex items-center space-x-1 text-sm font-medium text-[#414753]" aria-label="Tools">
+            {navItems.map(({ tool, label }) => (
+              <button
+                key={tool}
+                onClick={() => setActiveTool(tool)}
+                aria-current={activeTool === tool ? 'page' : undefined}
+                className={`px-3 py-1.5 rounded-lg transition-colors ${
+                  activeTool === tool
+                    ? 'text-[#005db2] font-semibold bg-[#005db2]/10'
+                    : 'hover:text-[#1a1c1c] hover:bg-black/5'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
         </div>
 
@@ -102,20 +120,28 @@ export const Header: React.FC<HeaderProps> = ({
             servingCount={servingCount}
             onExportSync={onExportSync}
             onImportSync={onImportSync}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            presence={presence}
           />
 
           <button
             onClick={onOpenPrivacyModal}
+            aria-label="P2P Guarantee"
             className="hidden sm:inline-flex items-center space-x-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-lg transition-colors h-[34px]"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>P2P Guarantee</span>
+            <span className="hidden xl:inline">P2P Guarantee</span>
           </button>
 
           {/* Mobile hamburger */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="sm:hidden p-1.5 text-black/70 hover:text-black rounded-md"
+            className="xl:hidden p-1.5 text-black/70 hover:text-black rounded-md"
+            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMobileMenuOpen}
           >
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -124,29 +150,53 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Mobile Menu Drawer */}
       {isMobileMenuOpen && (
-        <div className="sm:hidden pt-3 pb-2 border-t border-black/10 mt-2 space-y-1">
-          <button
-            onClick={() => {
-              setActiveTool('dashboard');
-              setIsMobileMenuOpen(false);
-            }}
-            className={`block w-full text-left px-3 py-2 rounded-md text-sm ${
-              activeTool === 'dashboard' ? 'bg-[#005db2]/10 text-[#005db2] font-semibold' : 'text-[#414753] hover:bg-black/5'
-            }`}
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => {
-              setActiveTool('edit');
-              setIsMobileMenuOpen(false);
-            }}
-            className={`block w-full text-left px-3 py-2 rounded-md text-sm ${
-              activeTool === 'edit' ? 'bg-[#005db2]/10 text-[#005db2] font-semibold' : 'text-[#414753] hover:bg-black/5'
-            }`}
-          >
-            Edit
-          </button>
+        <div className="xl:hidden pt-3 pb-2 border-t border-black/10 mt-2 space-y-1">
+          {navItems.map(({ tool, label }) => (
+            <button
+              key={tool}
+              onClick={() => {
+                setActiveTool(tool);
+                setIsMobileMenuOpen(false);
+              }}
+              aria-current={activeTool === tool ? 'page' : undefined}
+              className={`block w-full text-left px-3 py-2 rounded-md text-sm ${
+                activeTool === tool ? 'bg-[#005db2]/10 text-[#005db2] font-semibold' : 'text-[#414753] hover:bg-black/5'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          {documentId && (
+            <div className="sm:hidden border-t border-black/10 pt-1 mt-1">
+              <button
+                onClick={() => {
+                  onExportSync();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="block w-full text-left px-3 py-2 rounded-md text-sm text-[#414753] hover:bg-black/5"
+              >
+                Export .cdsync
+              </button>
+              <button
+                onClick={() => syncFileRef.current?.click()}
+                className="block w-full text-left px-3 py-2 rounded-md text-sm text-[#414753] hover:bg-black/5"
+              >
+                Import .cdsync
+              </button>
+              <input
+                ref={syncFileRef}
+                type="file"
+                accept=".cdsync,application/x-cdsync,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportSync(file);
+                  e.target.value = '';
+                  setIsMobileMenuOpen(false);
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
     </header>

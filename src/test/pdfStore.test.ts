@@ -41,10 +41,9 @@ describe('PDF Store & Binary Chunker', () => {
     const assembledBytes = await reassembler.assembleAndVerify();
     expect(assembledBytes.byteLength).toBe(mockSize);
 
-    // Byte-for-byte identity
-    for (let i = 0; i < mockSize; i++) {
-      expect(assembledBytes[i]).toBe(mockBytes[i]);
-    }
+    // Byte-for-byte identity via native memcmp: per-byte expect() took 0.7 s and
+    // toEqual 0.2 s, enough to hit the 5 s test timeout on a busy machine
+    expect(Buffer.compare(assembledBytes, mockBytes)).toBe(0);
   });
 
   it('rejects tampered or corrupted chunks during verification', async () => {

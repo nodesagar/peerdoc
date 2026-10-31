@@ -21,6 +21,7 @@ import {
   FileCheck2,
   Upload,
 } from 'lucide-react';
+import { pressable } from '../lib/pressable';
 import { Highlighter } from './ui/highlighter';
 
 interface DashboardProps {
@@ -122,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="relative flex items-center w-full">
               <input
                 type="text"
-                placeholder="Enter Room ID or paste link..."
+                placeholder="Paste share link..."
                 value={joinInput}
                 onChange={(e) => setJoinInput(e.target.value)}
                 className="w-full sm:w-64 bg-white border border-black/15 text-xs rounded-xl px-3 py-2.5 pr-14 focus:outline-none focus:border-[#005db2]"
@@ -152,8 +153,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {/* 1. Edit PDF */}
         <div
-          onClick={() => setActiveTool('edit')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-emerald-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('edit'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-emerald-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-400 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">
@@ -178,8 +179,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 2. Organize Pages */}
         <div
-          onClick={() => setActiveTool('organize')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-blue-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('organize'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-blue-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-400 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">
@@ -204,8 +205,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 3. True Redact */}
         <div
-          onClick={() => setActiveTool('redact')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-rose-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('redact'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-rose-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-400 to-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">
@@ -230,8 +231,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 4. Digital Signature */}
         <div
-          onClick={() => setActiveTool('sign')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-purple-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('sign'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-purple-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-400 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">
@@ -256,8 +257,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 5. Compress PDF */}
         <div
-          onClick={() => setActiveTool('compress')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-amber-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('compress'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-amber-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 to-orange-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">
@@ -271,7 +272,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <h3 className="text-lg font-bold text-[#1a1c1c]">Compress</h3>
             <p className="text-xs text-[#5f6368] leading-relaxed">
-              Shrink file sizes locally with stream optimization without compromising document clarity.
+              Shrink scanned and photo-heavy PDFs locally by re-encoding images. Text stays sharp.
             </p>
           </div>
           <div className="pt-4 flex items-center text-xs font-semibold text-amber-600 group-hover:translate-x-1 transition-transform">
@@ -282,8 +283,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 6. Merge PDFs */}
         <div
-          onClick={() => setActiveTool('merge')}
-          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-teal-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden"
+          {...pressable(() => setActiveTool('merge'))}
+          className="group relative bg-white rounded-2xl p-5 border border-black/[0.08] shadow-2xs hover:shadow-xl hover:border-teal-500/40 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer flex flex-col justify-between overflow-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
         >
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-teal-400 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           <div className="space-y-2.5">

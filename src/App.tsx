@@ -15,9 +15,11 @@ import { WatermarkTool } from './components/WatermarkTool';
 import { EncryptTool } from './components/EncryptTool';
 import { ConvertTool } from './components/ConvertTool';
 import { PrivacyModal } from './components/PrivacyModal';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useCRDTSync } from './hooks/useCRDTSync';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
+import { newRoomKey, parseShareInput, getStoredRoomKey, storeRoomKey } from './lib/crdt/roomKey';
 import { PDFDocument } from 'pdf-lib';
 
 async function countPages(bytes: Uint8Array): Promise<number> {
@@ -28,16 +30,10 @@ async function countPages(bytes: Uint8Array): Promise<number> {
   }
 }
 
-/** Accepts a bare SHA-256 room ID or a pasted share link containing ?doc=<id>. */
-function parseRoomId(input: string): string | null {
-  let id = input.trim();
-  try {
-    id = new URL(id).searchParams.get('doc') ?? id;
-  } catch {
-    /* not a URL */
-  }
-  id = id.trim().toLowerCase();
-  return /^[0-9a-f]{64}$/.test(id) ? id : null;
+/** Typing in a field keeps the browser's own text undo. */
+function isTextInput(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
 }
 
 export default function App() {
@@ -46,6 +42,7 @@ export default function App() {
 
   // Active Document and Room State
   const [documentId, setDocumentId] = useState<string | null>(null);
+  const [roomKey, setRoomKey] = useState<string | null>(null);
   const [rawPdfBytes, setRawPdfBytes] = useState<Uint8Array | null>(null);
   const [fileName, setFileName] = useState<string>('Document.pdf');
   const [pageCount, setPageCount] = useState<number>(0);
@@ -55,6 +52,7 @@ export default function App() {
   // Initialize unified CRDT Sync hook for the active document room
   const crdt = useCRDTSync({
     documentId,
+    roomKey,
     initialPdfBytes: rawPdfBytes,
     initialTitle: fileName,
     pageCount,
@@ -66,13 +64,36 @@ export default function App() {
       if (val) setRecentDocs(val);
     });
 
-    // Check URL parameters for collaborative room invitation: ?doc=<sha256>
-    const urlParams = new URLSearchParams(window.location.search);
-    const docFromUrl = urlParams.get('doc');
-    if (docFromUrl) {
-      handleJoinRoomId(docFromUrl);
+    // Collaborative room invitation: ?doc=<sha256>#k=<room key>
+    if (new URLSearchParams(window.location.search).get('doc')) {
+      handleJoinRoomId(window.location.href);
     }
   }, []);
+
+  // Let collaborators see which tool we have open
+  const { setPresence, awareness } = crdt;
+  useEffect(() => {
+    setPresence({ tool: activeTool });
+  }, [setPresence, awareness, activeTool]);
+  const presence = React.useMemo(
+    () => ({ awareness: crdt.awareness, user: crdt.user, onRename: crdt.setUser }),
+    [crdt.awareness, crdt.user, crdt.setUser]
+  );
+
+  // Undo/redo shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y
+  const { undo, redo } = crdt;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || isTextInput(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) undo();
+      else if ((key === 'z' && e.shiftKey) || (key === 'y' && !e.metaKey)) redo();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo]);
 
   const handleDocumentProcessed = (newDoc: ProcessedDoc) => {
     setRecentDocs((prev) => {
@@ -88,14 +109,12 @@ export default function App() {
     del('editordoc_recent_docs').catch(console.error);
   };
 
-  const updateUrlDocParam = (docId: string | null) => {
-    if (typeof window === 'undefined') return;
+  // The URL doubles as the share link, so the room key rides in the #fragment
+  // (never sent to any server).
+  const updateUrlDocParam = (docId: string, key: string) => {
     const url = new URL(window.location.href);
-    if (docId) {
-      url.searchParams.set('doc', docId);
-    } else {
-      url.searchParams.delete('doc');
-    }
+    url.searchParams.set('doc', docId);
+    url.hash = new URLSearchParams({ k: key }).toString();
     window.history.replaceState(null, '', url.toString());
   };
 
@@ -127,12 +146,19 @@ export default function App() {
     const docId = (await computeSHA256(bytes.slice())).toLowerCase();
     await storeOriginalPDF(docId, bytes.slice(), name);
     const count = await countPages(bytes);
+    // Reopening a PDF rejoins its existing room; a new PDF gets a fresh private room.
+    let key = await getStoredRoomKey(docId);
+    if (!key) {
+      key = newRoomKey();
+      await storeRoomKey(docId, key);
+    }
 
     setFileName(name);
     setRawPdfBytes(bytes.slice());
     setPageCount(count);
+    setRoomKey(key);
     setDocumentId(docId);
-    updateUrlDocParam(docId);
+    updateUrlDocParam(docId, key);
     setActiveTool('edit');
   };
 
@@ -145,21 +171,32 @@ export default function App() {
     }
   };
 
-  const handleJoinRoomId = async (roomId: string) => {
-    const cleanId = parseRoomId(roomId);
-    if (!cleanId) {
-      alert('Invalid room ID. Paste the 64-character document ID or a share link containing ?doc=...');
+  const handleJoinRoomId = async (input: string) => {
+    const parsed = parseShareInput(input);
+    if (!parsed) {
+      alert('Invalid room ID. Paste the share link, or the 64-character document ID of a document you have opened before.');
       return;
     }
+    const cleanId = parsed.documentId;
     const existing = await getOriginalPDF(cleanId);
+    let key = parsed.roomKey ?? (await getStoredRoomKey(cleanId));
+    if (!key && existing?.bytes) {
+      // Our own document from before rooms had keys: start a fresh private room.
+      key = newRoomKey();
+    } else if (!key) {
+      alert('This link is missing its room key. Ask for the full share link (it ends with #k=...).');
+      return;
+    }
+    await storeRoomKey(cleanId, key);
     // Joiners never seed pages unless they hold the PDF; otherwise pages arrive from peers.
     const count = existing?.bytes ? await countPages(existing.bytes) : 0;
 
     setRawPdfBytes(existing?.bytes ?? null);
     setFileName(existing?.filename || 'Document.pdf');
     setPageCount(count);
+    setRoomKey(key);
     setDocumentId(cleanId);
-    updateUrlDocParam(cleanId);
+    updateUrlDocParam(cleanId, key);
     setActiveTool('edit');
   };
 
@@ -176,6 +213,11 @@ export default function App() {
         servingCount={crdt.servingCount}
         onExportSync={crdt.exportSync}
         onImportSync={crdt.importSync}
+        onUndo={crdt.undo}
+        onRedo={crdt.redo}
+        canUndo={crdt.canUndo}
+        canRedo={crdt.canRedo}
+        presence={presence}
       />
 
       {/* Main Tool Area */}
@@ -269,6 +311,8 @@ export default function App() {
 
       {/* Footer */}
       <Footer onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)} />
+
+      <UpdateBanner />
 
       {/* Privacy Guarantee Modal */}
       <PrivacyModal

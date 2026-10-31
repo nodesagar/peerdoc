@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import type { Awareness } from 'y-protocols/awareness';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { joinRoom } from 'trystero/torrent';
 import { SyncTransport, PeerMessage, DocSyncEngine, BroadcastChannelTransport, PdfTransferEvent } from './docSync';
@@ -44,6 +45,8 @@ export class TrysteroTransport implements SyncTransport {
           relayUrls: RELIABLE_TRACKERS,
           rtcConfig: RTC_CONFIG as unknown as RTCConfiguration, // see RTC_CONFIG note
           relayRedundancy: 4,
+          // Encrypts SDP offers/answers on the trackers; roomId carries the room key.
+          password: roomId,
         },
         roomId
       );
@@ -121,6 +124,8 @@ export async function createP2PProvider(
   documentId: string,
   existingDoc?: Y.Doc,
   callbacks?: {
+    roomKey?: string;
+    awareness?: Awareness;
     getLocalPdfBytes?: () => Uint8Array | null;
     onStatusChange?: (status: SyncStatus) => void;
     onPeersChange?: (count: number) => void;
@@ -161,6 +166,8 @@ export async function createP2PProvider(
   const engine = new DocSyncEngine({
     doc,
     documentId,
+    roomKey: callbacks?.roomKey,
+    awareness: callbacks?.awareness,
     transports,
     // Without this the engine only saw PDFs persisted to IndexedDB: a host whose
     // storage write failed (private window, quota) could never serve the file.

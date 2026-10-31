@@ -24,6 +24,8 @@ describe('Overlay placement in exported PDF', () => {
         whiteouts: [],
         redactions: [],
         signatures: [],
+        annotations: [],
+        comments: [],
       });
 
       // Read back with pdf.js, the same engine the editor renders with

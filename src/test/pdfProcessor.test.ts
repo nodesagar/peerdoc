@@ -21,6 +21,8 @@ describe('PDF processing', () => {
       whiteouts: [],
       redactions: [],
       signatures: [],
+      annotations: [],
+      comments: [],
     });
     expect((await PDFDocument.load(out)).getPageCount()).toBe(2);
   });

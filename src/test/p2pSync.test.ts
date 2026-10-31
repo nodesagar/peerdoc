@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/** Poll for async outcomes instead of sleeping a fixed time. */
+const WAIT = { timeout: 4000, interval: 10 };
 import * as Y from 'yjs';
 import {
   computeSHA256,
@@ -109,9 +112,7 @@ describe('P2P Document Sharing & Binary Chunking', () => {
     const reassembled = await reassembler.assembleAndVerify();
     expect(reassembled.byteLength).toBe(mockBytes.byteLength);
 
-    for (let i = 0; i < mockBytes.byteLength; i++) {
-      expect(reassembled[i]).toBe(mockBytes[i]);
-    }
+    expect(Buffer.compare(reassembled, mockBytes)).toBe(0); // byte-for-byte, native memcmp
   });
 
   it('automatically requests and delivers PDF when Peer B connects with empty document', async () => {
@@ -160,10 +161,8 @@ describe('P2P Document Sharing & Binary Chunking', () => {
     transportA.simulateJoin('peer-B');
     transportB.simulateJoin('peer-A');
 
-    // Wait for async messages
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(peerBReceivedPdf).not.toBeNull();
+    // Wait for the transfer itself, not a fixed time (slow on a busy machine)
+    await vi.waitFor(() => expect(peerBReceivedPdf).not.toBeNull(), WAIT);
     expect(peerBReceivedPdf!.byteLength).toBe(mockPdf.byteLength);
     expect(peerBReceivedFilename).toBe('Document.pdf');
 
@@ -190,9 +189,8 @@ describe('P2P Document Sharing & Binary Chunking', () => {
     addWhiteoutCRDT(docC, { pageIndex: 0, x: 1, y: 1, width: 5, height: 5 });
     const { blob } = exportSyncFile(docC, documentId);
     await importSyncFile(blob, docA, documentId);
-    await new Promise((r) => setTimeout(r, 20));
 
-    expect(readDocumentSnapshot(docB).whiteouts.length).toBe(1);
+    await vi.waitFor(() => expect(readDocumentSnapshot(docB).whiteouts.length).toBe(1), WAIT);
     engines.forEach((e) => e.destroy());
   });
 
@@ -217,10 +215,12 @@ describe('P2P Document Sharing & Binary Chunking', () => {
     b1.simulateJoin('A-bc');
     a2.simulateJoin('B-rtc');
     b2.simulateJoin('A-rtc');
-    await new Promise((r) => setTimeout(r, 20));
 
-    expect(engineA.getConnectedPeerCount()).toBe(1);
-    expect(engineB.getConnectedPeerCount()).toBe(1);
+    // Wait until both sessions have identified themselves on both links
+    await vi.waitFor(() => {
+      expect(engineA.getConnectedPeerCount()).toBe(1);
+      expect(engineB.getConnectedPeerCount()).toBe(1);
+    }, WAIT);
     engineA.destroy();
     engineB.destroy();
   });

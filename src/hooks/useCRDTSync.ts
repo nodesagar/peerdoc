@@ -1,15 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
+import { getLocalUser, saveLocalUser, PresenceState, PresenceUser } from '../lib/presence';
 import {
   DocumentSnapshot,
   readDocumentSnapshot,
   initializeDocument,
+  createUndoManager,
   getMetaMap,
   getPagesMap,
   getTextOverlaysMap,
   getWhiteoutsMap,
   getRedactionsMap,
   getSignaturesMap,
+  getAnnotationsMap,
+  getCommentsMap,
+  addAnnotationCRDT,
+  updateAnnotationCRDT,
+  removeAnnotationCRDT,
+  addCommentCRDT,
+  removeCommentCRDT,
   addTextOverlayCRDT,
   updateTextOverlayCRDT,
   removeTextOverlayCRDT,
@@ -31,10 +41,12 @@ import { PdfTransferEvent } from '../lib/crdt/docSync';
 export type TransferLogEntry = PdfTransferEvent & { at: number };
 import { exportSyncFile, importSyncFile, downloadSyncFile } from '../lib/crdt/fileSync';
 import { getOriginalPDF, storeOriginalPDF } from '../lib/crdt/pdfStore';
-import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata } from '../types';
+import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata, Annotation } from '../types';
 
 export interface UseCRDTSyncOptions {
   documentId: string | null;
+  /** Secret from the share link; peers without it never meet this room. */
+  roomKey?: string | null;
   initialPdfBytes?: Uint8Array | null;
   initialTitle?: string;
   pageCount?: number;
@@ -47,10 +59,12 @@ const EMPTY_SNAPSHOT: DocumentSnapshot = {
   whiteouts: [],
   redactions: [],
   signatures: [],
+  annotations: [],
+  comments: [],
 };
 
 export function useCRDTSync(options: UseCRDTSyncOptions) {
-  const { documentId, initialPdfBytes, initialTitle, pageCount } = options;
+  const { documentId, roomKey, initialPdfBytes, initialTitle, pageCount } = options;
 
   const [doc, setDoc] = useState<Y.Doc | null>(null);
   const [snapshot, setSnapshot] = useState<DocumentSnapshot>(EMPTY_SNAPSHOT);
@@ -64,7 +78,15 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const [transferLog, setTransferLog] = useState<TransferLogEntry[]>([]);
   const [servingCount, setServingCount] = useState<number>(0);
 
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
+  const [user, setUserState] = useState<PresenceUser>(getLocalUser);
+  const userRef = useRef(user);
+  const awarenessRef = useRef<Awareness | null>(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
   const providerHandleRef = useRef<P2PProviderHandle | null>(null);
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const docRef = useRef<Y.Doc | null>(null);
   const rawPdfBytesRef = useRef<Uint8Array | null>(rawPdfBytes);
 
@@ -89,6 +111,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   useEffect(() => {
     if (!documentId) {
       setDoc(null);
+      setAwareness(null);
       docRef.current = null;
       setSnapshot(EMPTY_SNAPSHOT);
       setIsLoaded(false);
@@ -129,6 +152,27 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const whiteoutsMap = getWhiteoutsMap(ydoc);
     const redactionsMap = getRedactionsMap(ydoc);
     const signaturesMap = getSignaturesMap(ydoc);
+    const annotationsMap = getAnnotationsMap(ydoc);
+    const commentsMap = getCommentsMap(ydoc);
+
+    // Presence travels with the sync engine; it is created per room and never persisted.
+    const roomAwareness = new Awareness(ydoc);
+    roomAwareness.setLocalState({ user: userRef.current } satisfies PresenceState);
+    setAwareness(roomAwareness);
+    awarenessRef.current = roomAwareness;
+
+    const undoManager = createUndoManager(ydoc);
+    const refreshUndoState = () => {
+      if (isCancelled) return;
+      setCanUndo(undoManager.canUndo());
+      setCanRedo(undoManager.canRedo());
+    };
+    undoManager.on('stack-item-added', refreshUndoState);
+    undoManager.on('stack-item-popped', refreshUndoState);
+    undoManager.on('stack-cleared', refreshUndoState);
+    undoManagerRef.current = undoManager;
+    setCanUndo(false);
+    setCanRedo(false);
 
     metaMap.observeDeep(handleDeepChange);
     pagesMap.observeDeep(handleDeepChange);
@@ -136,6 +180,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     whiteoutsMap.observeDeep(handleDeepChange);
     redactionsMap.observeDeep(handleDeepChange);
     signaturesMap.observeDeep(handleDeepChange);
+    annotationsMap.observeDeep(handleDeepChange);
+    commentsMap.observeDeep(handleDeepChange);
 
     // Load or initialize
     (async () => {
@@ -162,6 +208,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
         // 2. Connect P2P and IndexedDB persistence
         const handle = await createP2PProvider(cleanDocId, ydoc, {
+          roomKey: roomKey ?? undefined,
+          awareness: roomAwareness,
           getLocalPdfBytes: () => rawPdfBytesRef.current,
           onStatusChange: (status) => {
             if (!isCancelled) setSyncStatus(status);
@@ -222,22 +270,51 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       whiteoutsMap.unobserveDeep(handleDeepChange);
       redactionsMap.unobserveDeep(handleDeepChange);
       signaturesMap.unobserveDeep(handleDeepChange);
+      annotationsMap.unobserveDeep(handleDeepChange);
+      commentsMap.unobserveDeep(handleDeepChange);
+
+      undoManager.destroy();
+      if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
 
       if (providerHandleRef.current) {
-        providerHandleRef.current.destroy();
+        providerHandleRef.current.destroy(); // announces our departure first
         providerHandleRef.current = null;
       }
+      roomAwareness.destroy();
+      if (awarenessRef.current === roomAwareness) awarenessRef.current = null;
+      setAwareness((a) => (a === roomAwareness ? null : a));
       if (docRef.current === ydoc) docRef.current = null;
       ydoc.destroy();
     };
-  }, [documentId, pageCount]);
+  }, [documentId, roomKey, pageCount]);
 
   // ================= Mutation Helpers =================
+
+  /** Stamped on every new item so peers can see who added it and when. */
+  const attribution = () => ({
+    createdBy: userRef.current.name,
+    createdByColor: userRef.current.color,
+    createdAt: Date.now(),
+  });
+
+  /** Merge fields into this tab's presence (tool, cursor, selection). */
+  const setPresence = useCallback((fields: Partial<PresenceState>) => {
+    const a = awarenessRef.current;
+    if (!a || !a.getLocalState()) return;
+    a.setLocalState({ ...a.getLocalState(), ...fields });
+  }, []);
+
+  const setUser = useCallback((next: PresenceUser) => {
+    userRef.current = next;
+    saveLocalUser(next);
+    setUserState(next);
+    setPresence({ user: next });
+  }, [setPresence]);
 
   const addTextOverlay = useCallback(
     (overlay: Omit<TextOverlay, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addTextOverlayCRDT(docRef.current, overlay);
+      return addTextOverlayCRDT(docRef.current, { ...attribution(), ...overlay });
     },
     []
   );
@@ -258,7 +335,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addWhiteout = useCallback(
     (box: Omit<WhiteoutBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addWhiteoutCRDT(docRef.current, box);
+      return addWhiteoutCRDT(docRef.current, { ...attribution(), ...box });
     },
     []
   );
@@ -279,7 +356,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addRedaction = useCallback(
     (redaction: Omit<RedactionBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addRedactionCRDT(docRef.current, redaction);
+      return addRedactionCRDT(docRef.current, { ...attribution(), ...redaction });
     },
     []
   );
@@ -292,7 +369,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const addSignature = useCallback(
     (sig: Omit<SignatureBox, 'id'> & { id?: string }) => {
       if (!docRef.current) return '';
-      return addSignatureCRDT(docRef.current, sig);
+      return addSignatureCRDT(docRef.current, { ...attribution(), ...sig });
     },
     []
   );
@@ -308,6 +385,31 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const removeSignature = useCallback((id: string) => {
     if (!docRef.current) return;
     removeSignatureCRDT(docRef.current, id);
+  }, []);
+
+  const addAnnotation = useCallback((a: Omit<Annotation, 'id'> & { id?: string }) => {
+    if (!docRef.current) return '';
+    return addAnnotationCRDT(docRef.current, { ...attribution(), ...a });
+  }, []);
+
+  const updateAnnotation = useCallback(
+    (id: string, patch: Parameters<typeof updateAnnotationCRDT>[2]) => {
+      if (docRef.current) updateAnnotationCRDT(docRef.current, id, patch);
+    },
+    []
+  );
+
+  const removeAnnotation = useCallback((id: string) => {
+    if (docRef.current) removeAnnotationCRDT(docRef.current, id);
+  }, []);
+
+  const addComment = useCallback((annotationId: string, text: string) => {
+    if (!docRef.current || !text.trim()) return '';
+    return addCommentCRDT(docRef.current, { ...attribution(), annotationId, text: text.trim() });
+  }, []);
+
+  const removeComment = useCallback((id: string) => {
+    if (docRef.current) removeCommentCRDT(docRef.current, id);
   }, []);
 
   const movePage = useCallback(
@@ -326,6 +428,14 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const deletePage = useCallback((pageId: string, deleted: boolean) => {
     if (!docRef.current) return;
     setPageDeletedCRDT(docRef.current, pageId, deleted);
+  }, []);
+
+  const undo = useCallback(() => {
+    undoManagerRef.current?.undo();
+  }, []);
+
+  const redo = useCallback(() => {
+    undoManagerRef.current?.redo();
   }, []);
 
   const exportSync = useCallback(() => {
@@ -361,6 +471,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     whiteouts: snapshot.whiteouts,
     redactions: snapshot.redactions,
     signatures: snapshot.signatures,
+    annotations: snapshot.annotations,
+    comments: snapshot.comments,
     meta: snapshot.meta,
     syncStatus,
     peerCount,
@@ -382,10 +494,23 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     addSignature,
     updateSignature,
     removeSignature,
+    addAnnotation,
+    updateAnnotation,
+    removeAnnotation,
+    addComment,
+    removeComment,
     movePage,
     rotatePage,
     deletePage,
     exportSync,
     importSync,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    awareness,
+    user,
+    setUser,
+    setPresence,
   };
 }
