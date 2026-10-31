@@ -61,6 +61,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const pdfProxyRef = useRef<any>(null);
 
   const pdfBlobUrl = React.useMemo(() => {
     if (!rawPdfBytes) return null;
@@ -72,6 +73,9 @@ export const RedactTool: React.FC<RedactToolProps> = ({
       if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
     };
   }, [pdfBlobUrl]);
+
+  // Metadata belongs to a specific PDF
+  React.useEffect(() => setMetadata(null), [rawPdfBytes]);
 
   // Load metadata on tab switch
   React.useEffect(() => {
@@ -136,19 +140,47 @@ export const RedactTool: React.FC<RedactToolProps> = ({
     setCurrentBox(null);
   };
 
-  const handleSearchWipe = () => {
-    if (!searchText.trim()) return;
+  // ponytail: matches within single pdf.js text items, horizontal text only; phrases split
+  // across items or rotated text are missed. Upgrade: join items per line + map char offsets.
+  const handleSearchWipe = async () => {
+    const query = searchText.trim().toLowerCase();
+    const pdf = pdfProxyRef.current;
+    if (!query || !pdf) return;
     setIsSearching(true);
-    // Add sample redaction box over sensitive area on page 0 for matched demo text
-    crdt.addRedaction({
-      pageIndex: 0,
-      x: 10,
-      y: 26,
-      width: 75,
-      height: 4,
-      label: 'WIPED: ' + searchText,
-    });
-    setIsSearching(false);
+    let found = 0;
+    try {
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: 1 });
+        const content = await page.getTextContent();
+        for (const item of content.items as any[]) {
+          if (!item.str) continue;
+          const lower = item.str.toLowerCase();
+          const [, , c, d, e, f] = item.transform;
+          const fontH = Math.hypot(c, d) || item.height || 10;
+          for (let idx = lower.indexOf(query); idx !== -1; idx = lower.indexOf(query, idx + query.length)) {
+            const x0 = e + (item.width * idx) / item.str.length;
+            const x1 = e + (item.width * (idx + query.length)) / item.str.length;
+            const [vx0, vy0, vx1, vy1] = viewport.convertToViewportRectangle([x0, f - fontH * 0.25, x1, f + fontH]);
+            const pad = 0.3;
+            crdt.addRedaction({
+              pageIndex: p - 1,
+              x: (Math.min(vx0, vx1) / viewport.width) * 100 - pad,
+              y: (Math.min(vy0, vy1) / viewport.height) * 100 - pad,
+              width: (Math.abs(vx1 - vx0) / viewport.width) * 100 + 2 * pad,
+              height: (Math.abs(vy1 - vy0) / viewport.height) * 100 + 2 * pad,
+              label: 'WIPED: ' + searchText.trim(),
+            });
+            found++;
+          }
+        }
+      }
+    } catch (err) {
+      alert('Text search failed: ' + err);
+    } finally {
+      setIsSearching(false);
+    }
+    if (!found) alert(`No matches for "${searchText.trim()}" (scanned/image-only text cannot be searched).`);
   };
 
   const handleExportRedacted = async () => {
@@ -350,9 +382,9 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         >
           <Document
             file={pdfBlobUrl}
-            onLoadSuccess={({ numPages: count }) => {
-              setNumPages(count);
-              if (crdt.pages.length === 0) crdt.initDocument(fileName, count);
+            onLoadSuccess={(pdf) => {
+              pdfProxyRef.current = pdf;
+              setNumPages(pdf.numPages);
             }}
             className="flex flex-col items-center space-y-8"
           >
