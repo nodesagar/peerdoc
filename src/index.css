@@ -1,9 +1,12 @@
 @import "tailwindcss";
-@import "@fontsource-variable/geist";
+/* Fonts are bundled (and precached by the service worker): no third-party requests, works offline. */
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
 
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-serif: 'Source Serif 4', Georgia, serif;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Source Serif 4 Variable', Georgia, serif;
 }
 
 body {
