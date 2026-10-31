@@ -15,6 +15,7 @@ import { WatermarkTool } from './components/WatermarkTool';
 import { EncryptTool } from './components/EncryptTool';
 import { ConvertTool } from './components/ConvertTool';
 import { PrivacyModal } from './components/PrivacyModal';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useCRDTSync } from './hooks/useCRDTSync';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
@@ -299,6 +300,8 @@ export default function App() {
 
       {/* Footer */}
       <Footer onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)} />
+
+      <UpdateBanner />
 
       {/* Privacy Guarantee Modal */}
       <PrivacyModal
