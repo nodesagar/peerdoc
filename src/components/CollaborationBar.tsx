@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wifi, WifiOff, Users, Download, Upload, Copy, Check, Share2, Shield, FolderSync } from 'lucide-react';
+import { Wifi, WifiOff, Users, Download, Upload, Copy, Check, Share2, Shield, FolderSync, Undo2, Redo2 } from 'lucide-react';
 import { SyncStatus } from '../types';
 
 interface CollaborationBarProps {
@@ -9,6 +9,10 @@ interface CollaborationBarProps {
   servingCount?: number;
   onExportSync: () => void;
   onImportSync: (file: File) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
@@ -18,6 +22,10 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   servingCount = 0,
   onExportSync,
   onImportSync,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }) => {
   const [copied, setCopied] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -79,6 +87,30 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           <span>Sending PDF{servingCount > 1 ? ` to ${servingCount}` : ''}</span>
         </span>
       )}
+
+      <div className="h-3.5 w-px bg-black/10 shrink-0" />
+
+      {/* Undo / Redo (only this user's edits) */}
+      <div className="flex items-center shrink-0">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          aria-label="Undo"
+          title="Undo your last edit (Ctrl/Cmd+Z)"
+          className="p-1 rounded-md text-[#414753] hover:bg-black/[0.05] disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <Undo2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          aria-label="Redo"
+          title="Redo (Ctrl/Cmd+Shift+Z)"
+          className="p-1 rounded-md text-[#414753] hover:bg-black/[0.05] disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <Redo2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
 
       <div className="h-3.5 w-px bg-black/10 shrink-0" />
 

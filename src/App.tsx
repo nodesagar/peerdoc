@@ -40,6 +40,12 @@ function parseRoomId(input: string): string | null {
   return /^[0-9a-f]{64}$/.test(id) ? id : null;
 }
 
+/** Typing in a field keeps the browser's own text undo. */
+function isTextInput(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+}
+
 export default function App() {
   const [activeTool, setActiveTool] = useState<ActiveTool>('dashboard');
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState<boolean>(false);
@@ -73,6 +79,21 @@ export default function App() {
       handleJoinRoomId(docFromUrl);
     }
   }, []);
+
+  // Undo/redo shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl+Y
+  const { undo, redo } = crdt;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || isTextInput(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) undo();
+      else if ((key === 'z' && e.shiftKey) || (key === 'y' && !e.metaKey)) redo();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo]);
 
   const handleDocumentProcessed = (newDoc: ProcessedDoc) => {
     setRecentDocs((prev) => {
@@ -176,6 +197,10 @@ export default function App() {
         servingCount={crdt.servingCount}
         onExportSync={crdt.exportSync}
         onImportSync={crdt.importSync}
+        onUndo={crdt.undo}
+        onRedo={crdt.redo}
+        canUndo={crdt.canUndo}
+        canRedo={crdt.canRedo}
       />
 
       {/* Main Tool Area */}

@@ -13,6 +13,10 @@ interface HeaderProps {
   servingCount?: number;
   onExportSync: () => void;
   onImportSync: (file: File) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,6 +29,10 @@ export const Header: React.FC<HeaderProps> = ({
   servingCount,
   onExportSync,
   onImportSync,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -102,6 +110,10 @@ export const Header: React.FC<HeaderProps> = ({
             servingCount={servingCount}
             onExportSync={onExportSync}
             onImportSync={onImportSync}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            canUndo={canUndo}
+            canRedo={canRedo}
           />
 
           <button

@@ -39,6 +39,21 @@ export function getSignaturesMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
   return doc.getMap('signatures');
 }
 
+/**
+ * Undo/redo for this user's edits only. Local mutations use origin null (the
+ * UndoManager default); peer updates ('p2p'), IndexedDB loads, .cdsync imports
+ * ('file-sync') and seeding (SEED_ORIGIN) carry other origins and are skipped.
+ */
+export function createUndoManager(doc: Y.Doc): Y.UndoManager {
+  return new Y.UndoManager([
+    getPagesMap(doc),
+    getTextOverlaysMap(doc),
+    getWhiteoutsMap(doc),
+    getRedactionsMap(doc),
+    getSignaturesMap(doc),
+  ]);
+}
+
 /** FNV-1a 32-bit; stable non-zero Yjs client ID derived from the document ID. */
 function seedClientId(documentId: string): number {
   let h = 0x811c9dc5;
@@ -78,6 +93,9 @@ function buildSeedUpdate(documentId: string, pageCount: number): Uint8Array {
   return update;
 }
 
+/** Origin of document setup; the undo manager only tracks user edits (origin null). */
+export const SEED_ORIGIN = 'seed';
+
 /**
  * Initialize document metadata and pages if doc is newly created.
  */
@@ -88,7 +106,7 @@ export function initializeDocument(
   pageCount: number
 ) {
   if (getPagesMap(doc).size === 0 && pageCount > 0) {
-    Y.applyUpdate(doc, buildSeedUpdate(documentId, pageCount));
+    Y.applyUpdate(doc, buildSeedUpdate(documentId, pageCount), SEED_ORIGIN);
   }
   // Peer-specific values stay outside the seed; concurrent sets are plain last-writer-wins.
   doc.transact(() => {
@@ -96,7 +114,7 @@ export function initializeDocument(
     if (!meta.has('documentId')) meta.set('documentId', documentId);
     if (!meta.has('title')) meta.set('title', title);
     if (!meta.has('createdAt')) meta.set('createdAt', Date.now());
-  });
+  }, SEED_ORIGIN);
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   DocumentSnapshot,
   readDocumentSnapshot,
   initializeDocument,
+  createUndoManager,
   getMetaMap,
   getPagesMap,
   getTextOverlaysMap,
@@ -64,7 +65,11 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const [transferLog, setTransferLog] = useState<TransferLogEntry[]>([]);
   const [servingCount, setServingCount] = useState<number>(0);
 
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
   const providerHandleRef = useRef<P2PProviderHandle | null>(null);
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const docRef = useRef<Y.Doc | null>(null);
   const rawPdfBytesRef = useRef<Uint8Array | null>(rawPdfBytes);
 
@@ -129,6 +134,19 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const whiteoutsMap = getWhiteoutsMap(ydoc);
     const redactionsMap = getRedactionsMap(ydoc);
     const signaturesMap = getSignaturesMap(ydoc);
+
+    const undoManager = createUndoManager(ydoc);
+    const refreshUndoState = () => {
+      if (isCancelled) return;
+      setCanUndo(undoManager.canUndo());
+      setCanRedo(undoManager.canRedo());
+    };
+    undoManager.on('stack-item-added', refreshUndoState);
+    undoManager.on('stack-item-popped', refreshUndoState);
+    undoManager.on('stack-cleared', refreshUndoState);
+    undoManagerRef.current = undoManager;
+    setCanUndo(false);
+    setCanRedo(false);
 
     metaMap.observeDeep(handleDeepChange);
     pagesMap.observeDeep(handleDeepChange);
@@ -222,6 +240,9 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       whiteoutsMap.unobserveDeep(handleDeepChange);
       redactionsMap.unobserveDeep(handleDeepChange);
       signaturesMap.unobserveDeep(handleDeepChange);
+
+      undoManager.destroy();
+      if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
 
       if (providerHandleRef.current) {
         providerHandleRef.current.destroy();
@@ -328,6 +349,14 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     setPageDeletedCRDT(docRef.current, pageId, deleted);
   }, []);
 
+  const undo = useCallback(() => {
+    undoManagerRef.current?.undo();
+  }, []);
+
+  const redo = useCallback(() => {
+    undoManagerRef.current?.redo();
+  }, []);
+
   const exportSync = useCallback(() => {
     if (!docRef.current || !documentId) return;
     const { blob, filename } = exportSyncFile(docRef.current, documentId);
@@ -387,5 +416,9 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     deletePage,
     exportSync,
     importSync,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   };
 }
