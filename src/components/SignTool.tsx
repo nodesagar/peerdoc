@@ -114,7 +114,7 @@ export const SignTool: React.FC<SignToolProps> = ({
     setActiveSignatureDataUrl(sigCanvasRef.current.toDataURL('image/png'));
   };
 
-  const handleGenerateTypedSig = () => {
+  const handleGenerateTypedSig = (name: string = typedName) => {
     const canvas = document.createElement('canvas');
     canvas.width = 400;
     canvas.height = 150;
@@ -122,7 +122,7 @@ export const SignTool: React.FC<SignToolProps> = ({
     if (ctx) {
       ctx.font = 'italic 42px "Brush Script MT", "Caveat", "Segoe Script", cursive';
       ctx.fillStyle = '#002060';
-      ctx.fillText(typedName, 30, 90);
+      ctx.fillText(name, 30, 90);
       setActiveSignatureDataUrl(canvas.toDataURL('image/png'));
     }
   };
@@ -269,7 +269,7 @@ export const SignTool: React.FC<SignToolProps> = ({
             <button
               onClick={() => {
                 setActiveTab('type');
-                handleGenerateTypedSig();
+                handleGenerateTypedSig(typedName);
               }}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === 'type' ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
@@ -318,7 +318,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                 value={typedName}
                 onChange={(e) => {
                   setTypedName(e.target.value);
-                  setTimeout(handleGenerateTypedSig, 50);
+                  handleGenerateTypedSig(e.target.value);
                 }}
                 className="bg-[#f4f3f2] text-xs px-2.5 py-1.5 rounded-lg border border-black/10 outline-none w-36"
               />
