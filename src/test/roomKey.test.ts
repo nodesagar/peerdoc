@@ -11,12 +11,18 @@ describe('room key', () => {
     expect(newRoomKey()).not.toBe(a);
   });
 
-  it('parses share links, bare IDs and rejects junk', () => {
-    const key = newRoomKey();
-    expect(parseShareInput(`https://x.app/?doc=${ID.toUpperCase()}#k=${key}`)).toEqual({ documentId: ID, roomKey: key });
-    expect(parseShareInput(`https://x.app/?doc=${ID}`)).toEqual({ documentId: ID, roomKey: null });
-    expect(parseShareInput(` ${ID} `)).toEqual({ documentId: ID, roomKey: null });
-    expect(parseShareInput(`https://x.app/?doc=${ID}#k=short`)).toEqual({ documentId: ID, roomKey: null });
+  it('parses invite links, bare IDs and rejects junk', () => {
+    const token = newRoomKey();
+    const owner = newRoomKey();
+    expect(parseShareInput(`https://x.app/?doc=${ID.toUpperCase()}#i=${token}&o=${owner}`)).toEqual({
+      documentId: ID,
+      invite: { token, ownerId: owner },
+      legacyKey: false,
+    });
+    expect(parseShareInput(`https://x.app/?doc=${ID}`)).toEqual({ documentId: ID, invite: null, legacyKey: false });
+    expect(parseShareInput(` ${ID} `)).toEqual({ documentId: ID, invite: null, legacyKey: false });
+    expect(parseShareInput(`https://x.app/?doc=${ID}#i=short&o=${owner}`)?.invite).toBeNull();
+    expect(parseShareInput(`https://x.app/?doc=${ID}#k=${token}`)).toEqual({ documentId: ID, invite: null, legacyKey: true });
     expect(parseShareInput('not-a-room')).toBeNull();
   });
 

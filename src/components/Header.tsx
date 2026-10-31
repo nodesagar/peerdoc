@@ -3,6 +3,7 @@ import { ActiveTool, SyncStatus } from '../types';
 import { ShieldCheck, Menu, X } from 'lucide-react';
 import { pressable } from '../lib/pressable';
 import { CollaborationBar, PresenceProps } from './CollaborationBar';
+import type { RoomAccessApi } from '../hooks/useRoomAccess';
 
 interface HeaderProps {
   activeTool: ActiveTool;
@@ -19,6 +20,7 @@ interface HeaderProps {
   canUndo: boolean;
   canRedo: boolean;
   presence: PresenceProps;
+  access: RoomAccessApi;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   canUndo,
   canRedo,
   presence,
+  access,
 }) => {
   const navItems: { tool: ActiveTool; label: string }[] = documentId
     ? [
@@ -125,6 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
             canUndo={canUndo}
             canRedo={canRedo}
             presence={presence}
+            access={access}
           />
 
           <button

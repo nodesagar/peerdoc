@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { WifiOff, Users, Download, Upload, Copy, Check, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
+import React from 'react';
+import { WifiOff, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
 import { SyncStatus } from '../types';
 import { PresenceAvatars } from './PresenceAvatars';
 import type { Awareness } from 'y-protocols/awareness';
 import type { PresenceUser } from '../lib/presence';
+import type { RoomAccessApi } from '../hooks/useRoomAccess';
+import { SharePanel } from './SharePanel';
 
 export interface PresenceProps {
   awareness: Awareness | null;
@@ -23,6 +25,7 @@ interface CollaborationBarProps {
   canUndo: boolean;
   canRedo: boolean;
   presence: PresenceProps;
+  access: RoomAccessApi;
 }
 
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
@@ -37,8 +40,9 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   canUndo,
   canRedo,
   presence,
+  access,
 }) => {
-  const [copied, setCopied] = useState(false);
+  const shareRef = React.useRef<HTMLDialogElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   if (!documentId) {
@@ -51,13 +55,6 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   }
 
   const shortDocId = `${documentId.slice(0, 6)}...${documentId.slice(-4)}`;
-
-  const handleCopyLink = () => {
-    // The address bar holds ?doc=<id>#k=<room key>; that is the invite.
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -133,15 +130,16 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
       {/* Room ID & Share */}
       <div className="flex items-center space-x-1 shrink-0">
         <button
-          onClick={handleCopyLink}
+          onClick={() => shareRef.current?.showModal()}
           className="flex items-center space-x-1 text-[#414753] hover:text-[#005db2] bg-black/[0.04] hover:bg-[#005db2]/10 px-2 py-0.5 rounded-md transition-colors"
-          title={`Private room for document ${documentId}\nClick to copy the invite link. Anyone with this link can view and edit.`}
-          aria-label="Copy invite link"
+          title={`Invite-only room for document ${documentId}\nInvite people or remove access`}
+          aria-label="Share: invite people or remove access"
         >
           <Lock className="w-3 h-3 text-[#005db2]" />
           <span className="hidden sm:inline font-mono text-[11px] font-semibold">{shortDocId}</span>
-          {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-black/40" />}
+          <span className="font-semibold">{access.status === 'owner' ? 'Share' : 'Access'}</span>
         </button>
+        <SharePanel access={access} dialogRef={shareRef} />
       </div>
 
       <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
