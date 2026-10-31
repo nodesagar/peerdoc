@@ -10,7 +10,7 @@
 
 EditorDoc P2P decouples edit operations from raw file storage using Conflict-Free Replicated Data Types (CRDTs):
 - **Document Identification**: `documentId = SHA-256(original_pdf_bytes)` names the file and verifies transferred chunks.
-- **Private Rooms (`roomKey.ts`)**: Opening a PDF creates a random 128-bit room key. Peers join `roomChannel(documentId, roomKey)` on every transport, so holding the same PDF is not enough to join. The key travels only in the share link's `#k=` fragment, which browsers never send to servers or trackers, and is remembered per document in IndexedDB so reopening the PDF rejoins the same room. Anyone with the full link can view and edit.
+- **Invite-only Rooms (`access.ts`, `roomKey.ts`)**: Whoever opens a PDF owns its room. Each browser has its own P-256 key pairs (private keys non-extractable, kept in IndexedDB). The owner signs a roster that lists the members and seals the random 128-bit room key separately to each member (ECDH, then HKDF, then AES-GCM). Every transport derives its channel from that key, so having the PDF is not enough to join. **Inviting** creates a one-time link (`?doc=<id>#i=<token>&o=<owner>`); its holder knocks on a control channel with a request sealed to the token, and the owner's browser admits them automatically. **Removing** someone rotates the room key and seals the new one to everyone else, so the removed browser can no longer find or read the room. Members pass the newest owner-signed roster to each other, so anyone online brings a returning member up to date. There is no server: the public trackers and relay only ever carry signed or encrypted data. Limits: the owner's browser must be online for an invitee's first join; a removed person keeps what they already had; a member who was offline during a removal can still send their own offline edits to the removed person before they hear about it; if the owner's browser storage is lost, the member list can no longer change.
 - **CRDT Document (`Y.Doc`)**: Manages non-conflicting operational state across nested `Y.Map` structures (`meta`, `pages`, `textOverlays`, `whiteouts`, `redactions`, `signatures`).
 - **Binary Storage (`pdfStore.ts`)**: The raw PDF is stored locally in IndexedDB (`idb-keyval`) and transferred in verified 48KB chunks over WebRTC on-demand.
 - **Offline Persistence (`y-indexeddb`)**: Edits survive browser refreshes, tab closures, and weeks offline.
@@ -70,7 +70,7 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
 
 ## 2. Key Features
 
-1. **Dashboard & Demo Loader**: Load sample confidential agreement with 1 click, open local PDF, or join a room by pasting its share link (`?doc=<id>#k=<room key>`).
+1. **Dashboard & Demo Loader**: Load sample confidential agreement with 1 click, open local PDF, or join a room by pasting a personal invite link (`?doc=<id>#i=<token>&o=<owner>`).
 2. **Text & Eraser Tool (`EditTool.tsx`)**: Rich typography (Helvetica, Times, Courier, etc.), font sizes, colors, and whiteout boxes with nested field-level merge protection.
 3. **Fractional Index Page Organizer (`OrganizeTool.tsx`)**: Reorder pages deterministically using fractional indices, rotate clockwise/counter-clockwise, restore/delete pages, and extract selections.
 4. **Permanent True Redactions (`RedactTool.tsx`)**: Renders page canvas, paints solid black boxes directly into pixel data, and replaces the page with a clean rasterized image. Permanently strips all sensitive metadata.
@@ -120,8 +120,8 @@ To verify real-time and offline peer convergence:
 
 1. Open `http://localhost:3000` in **Browser Profile A** (or Window 1).
 2. Click **"Load Demo Agreement"**.
-3. In the header `CollaborationBar`, click the lock button to copy the invite link (e.g. `http://localhost:3000/?doc=33842...#k=...`). The `#k=` part is the room key; a link without it is refused.
-4. Open the copied URL in **Browser Profile B** (or Window 2).
+3. In the header `CollaborationBar`, click **Share**, type who the invite is for, and click **Invite**. This copies a one-time link (e.g. `http://localhost:3000/?doc=33842...#i=...&o=...`).
+4. Open the copied URL in **Browser Profile B** (a different profile or a private window, so it has its own identity). Profile A admits it automatically. To test removal, click the remove button next to that person in **Share**.
 5. Notice both tabs immediately show **"1 Peer"** and green sync indicators!
 6. Disconnect Window 2 from network / close tab, make edits in both windows offline.
 7. Reconnect or exchange `.cdsync` files: both documents automatically converge to identical state without data loss!

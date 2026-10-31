@@ -112,6 +112,26 @@ export class TrysteroTransport implements SyncTransport {
   }
 }
 
+/**
+ * BroadcastChannel (same browser), WebRTC (direct P2P), and an encrypted MQTT
+ * relay for networks where WebRTC cannot connect. Fresh instances per channel.
+ */
+export function createTransports(): SyncTransport[] {
+  const transports: SyncTransport[] = [new BroadcastChannelTransport()];
+  if (typeof window === 'undefined') return transports;
+  try {
+    transports.push(new TrysteroTransport('editordoc-p2p-v1'));
+  } catch (e) {
+    console.warn('Could not initialize Trystero transport:', e);
+  }
+  try {
+    transports.push(createRelayTransport());
+  } catch (e) {
+    console.warn('Could not initialize relay transport:', e);
+  }
+  return transports;
+}
+
 export interface P2PProviderHandle {
   doc: Y.Doc;
   documentId: string;
@@ -143,24 +163,9 @@ export async function createP2PProvider(
   // Wait for indexeddb to load locally persisted state
   await idbProvider.whenSynced;
 
-  // 2. Transports: BroadcastChannel (same browser), WebRTC (direct P2P), and an
-  // encrypted MQTT relay for networks where WebRTC cannot connect.
-  const transports: SyncTransport[] = [
-    new BroadcastChannelTransport(),
-  ];
-
-  if (typeof window !== 'undefined') {
-    try {
-      transports.push(new TrysteroTransport('editordoc-p2p-v1'));
-    } catch (e) {
-      console.warn('Could not initialize Trystero transport:', e);
-    }
-    try {
-      transports.push(createRelayTransport());
-    } catch (e) {
-      console.warn('Could not initialize relay transport:', e);
-    }
-  }
+  // 2. Transports. No room key (invite pending, or removed) = local only: never
+  // fall back to a channel anyone with the PDF could compute.
+  const transports = callbacks?.roomKey ? createTransports() : [];
 
   // 3. Start DocSyncEngine
   const engine = new DocSyncEngine({

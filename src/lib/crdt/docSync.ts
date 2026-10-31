@@ -13,7 +13,9 @@ import {
 import { roomChannel } from './roomKey';
 
 export interface PeerMessage {
-  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable' | 'awareness';
+  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable' | 'awareness'
+    // Access control channel (access.ts)
+    | 'roster' | 'join';
   payload: any;
   /** Sender's engine session ID; lets one remote tab reached over several transports count once. */
   sender?: string;

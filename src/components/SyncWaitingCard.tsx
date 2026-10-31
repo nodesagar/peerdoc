@@ -3,10 +3,8 @@ import {
   Users,
   Wifi,
   WifiOff,
-  Check,
   RefreshCw,
   Upload,
-  Share2,
   FileText,
   Loader2,
   ArrowLeft,
@@ -59,7 +57,6 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   onImportSync,
   onReturnToDashboard,
 }) => {
-  const [copiedLink, setCopiedLink] = useState(false);
   const [isRequesting, setIsRequesting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const syncFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -70,17 +67,6 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   const isLocalhost =
     typeof window !== 'undefined' &&
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-  const handleCopyLink = () => {
-    try {
-      // The address bar holds ?doc=<id>#k=<room key>; that is the invite.
-      navigator.clipboard.writeText(window.location.href);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    } catch (e) {
-      console.warn('Failed to copy link:', e);
-    }
-  };
 
   const handleManualRequest = () => {
     setIsRequesting(true);
@@ -227,7 +213,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
           </div>
         )}
 
-        {/* Room ID Card & Copy Actions */}
+        {/* Room ID Card */}
         <div className="bg-[#f4f3f2] rounded-xl p-3 max-w-md mx-auto border border-black/5 space-y-2">
           <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6368]">
             Document ID (SHA-256)
@@ -236,16 +222,6 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
             <span className="truncate mr-2 font-medium" title={cleanId}>
               {shortId}
             </span>
-            <div className="flex items-center space-x-1 shrink-0">
-              <button
-                onClick={handleCopyLink}
-                className="flex items-center space-x-1 bg-[#005db2]/10 hover:bg-[#005db2]/20 text-[#005db2] px-2 py-0.5 rounded text-[11px] font-semibold transition-colors"
-                title="Copy Direct Share URL"
-              >
-                {copiedLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Share2 className="w-3 h-3" />}
-                <span>{copiedLink ? 'Copied!' : 'Share Link'}</span>
-              </button>
-            </div>
           </div>
         </div>
 

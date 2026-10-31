@@ -19,7 +19,10 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { useCRDTSync } from './hooks/useCRDTSync';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
-import { newRoomKey, parseShareInput, getStoredRoomKey, storeRoomKey } from './lib/crdt/roomKey';
+import { parseShareInput } from './lib/crdt/roomKey';
+import { createOwnedRoom, getIdentity, loadRoom, saveRoom } from './lib/crdt/access';
+import { useRoomAccess } from './hooks/useRoomAccess';
+import { AccessCard } from './components/AccessCard';
 import { PDFDocument } from 'pdf-lib';
 
 async function countPages(bytes: Uint8Array): Promise<number> {
@@ -29,6 +32,9 @@ async function countPages(bytes: Uint8Array): Promise<number> {
     return 0;
   }
 }
+
+/** Tools that work on the shared document (the others take their own files). */
+const DOC_TOOLS: ActiveTool[] = ['edit', 'organize', 'redact', 'sign', 'compress'];
 
 /** Typing in a field keeps the browser's own text undo. */
 function isTextInput(target: EventTarget | null): boolean {
@@ -42,17 +48,19 @@ export default function App() {
 
   // Active Document and Room State
   const [documentId, setDocumentId] = useState<string | null>(null);
-  const [roomKey, setRoomKey] = useState<string | null>(null);
+  // Bumped whenever this document's stored access record is replaced
+  const [accessRevision, setAccessRevision] = useState(0);
   const [rawPdfBytes, setRawPdfBytes] = useState<Uint8Array | null>(null);
   const [fileName, setFileName] = useState<string>('Document.pdf');
   const [pageCount, setPageCount] = useState<number>(0);
 
   const [recentDocs, setRecentDocs] = useState<ProcessedDoc[]>([]);
 
-  // Initialize unified CRDT Sync hook for the active document room
+  // Who may be in the room; its current key is what the document channel uses
+  const access = useRoomAccess(documentId, accessRevision);
   const crdt = useCRDTSync({
     documentId,
-    roomKey,
+    roomKey: access.roomKey,
     initialPdfBytes: rawPdfBytes,
     initialTitle: fileName,
     pageCount,
@@ -64,10 +72,16 @@ export default function App() {
       if (val) setRecentDocs(val);
     });
 
-    // Collaborative room invitation: ?doc=<sha256>#k=<room key>
+    // Invite (?doc=<sha256>#i=<token>&o=<owner>) or reopening a document (?doc=<sha256>)
     if (new URLSearchParams(window.location.search).get('doc')) {
       handleJoinRoomId(window.location.href);
     }
+    // An invite for the page already open only changes the #fragment: no reload
+    const onHashChange = () => {
+      if (new URLSearchParams(window.location.hash.slice(1)).has('i')) handleJoinRoomId(window.location.href);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
   // Let collaborators see which tool we have open
@@ -109,12 +123,11 @@ export default function App() {
     del('editordoc_recent_docs').catch(console.error);
   };
 
-  // The URL doubles as the share link, so the room key rides in the #fragment
-  // (never sent to any server).
-  const updateUrlDocParam = (docId: string, key: string) => {
+  // Only the document ID: an invite token is used up, never left in the address bar
+  const updateUrlDocParam = (docId: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set('doc', docId);
-    url.hash = new URLSearchParams({ k: key }).toString();
+    url.hash = '';
     window.history.replaceState(null, '', url.toString());
   };
 
@@ -146,19 +159,17 @@ export default function App() {
     const docId = (await computeSHA256(bytes.slice())).toLowerCase();
     await storeOriginalPDF(docId, bytes.slice(), name);
     const count = await countPages(bytes);
-    // Reopening a PDF rejoins its existing room; a new PDF gets a fresh private room.
-    let key = await getStoredRoomKey(docId);
-    if (!key) {
-      key = newRoomKey();
-      await storeRoomKey(docId, key);
-    }
+    // Reopening a PDF rejoins its room; a new PDF (or one we were removed from)
+    // gets a fresh invite-only room that we own.
+    const room = await loadRoom(docId);
+    if (!room || room.removed) await createOwnedRoom(docId, await getIdentity());
 
     setFileName(name);
     setRawPdfBytes(bytes.slice());
     setPageCount(count);
-    setRoomKey(key);
     setDocumentId(docId);
-    updateUrlDocParam(docId, key);
+    setAccessRevision((n) => n + 1);
+    updateUrlDocParam(docId);
     setActiveTool('edit');
   };
 
@@ -174,29 +185,39 @@ export default function App() {
   const handleJoinRoomId = async (input: string) => {
     const parsed = parseShareInput(input);
     if (!parsed) {
-      alert('Invalid room ID. Paste the share link, or the 64-character document ID of a document you have opened before.');
+      alert('Invalid link. Paste an invite link, or the 64-character document ID of a document you have opened before.');
       return;
     }
     const cleanId = parsed.documentId;
     const existing = await getOriginalPDF(cleanId);
-    let key = parsed.roomKey ?? (await getStoredRoomKey(cleanId));
-    if (!key && existing?.bytes) {
-      // Our own document from before rooms had keys: start a fresh private room.
-      key = newRoomKey();
-    } else if (!key) {
-      alert('This link is missing its room key. Ask for the full share link (it ends with #k=...).');
-      return;
+    const room = await loadRoom(cleanId);
+    if (parsed.invite) {
+      // Already a member of this owner's room? Then the invite is not needed.
+      if (!(room?.ownerId === parsed.invite.ownerId && room.roomKey)) {
+        await saveRoom(cleanId, { ownerId: parsed.invite.ownerId, token: parsed.invite.token });
+      }
+    } else if (!room) {
+      if (existing?.bytes) {
+        await createOwnedRoom(cleanId, await getIdentity()); // our own PDF from before invites
+      } else {
+        alert(
+          parsed.legacyKey
+            ? 'This is an old share link. Links no longer grant access by themselves: ask the owner for a personal invite link.'
+            : 'You have not been invited to this document. Ask its owner for an invite link.'
+        );
+        window.history.replaceState(null, '', window.location.pathname);
+        return;
+      }
     }
-    await storeRoomKey(cleanId, key);
     // Joiners never seed pages unless they hold the PDF; otherwise pages arrive from peers.
     const count = existing?.bytes ? await countPages(existing.bytes) : 0;
 
     setRawPdfBytes(existing?.bytes ?? null);
     setFileName(existing?.filename || 'Document.pdf');
     setPageCount(count);
-    setRoomKey(key);
     setDocumentId(cleanId);
-    updateUrlDocParam(cleanId, key);
+    setAccessRevision((n) => n + 1);
+    updateUrlDocParam(cleanId);
     setActiveTool('edit');
   };
 
@@ -218,10 +239,15 @@ export default function App() {
         canUndo={crdt.canUndo}
         canRedo={crdt.canRedo}
         presence={presence}
+        access={access}
       />
 
       {/* Main Tool Area */}
       <main className="flex-1">
+        {DOC_TOOLS.includes(activeTool) && documentId && (access.status === 'pending' || access.status === 'removed') ? (
+          <AccessCard status={access.status} onReturnToDashboard={() => setActiveTool('dashboard')} />
+        ) : (
+        <>
         {activeTool === 'dashboard' && (
           <Dashboard
             setActiveTool={setActiveTool}
@@ -306,6 +332,8 @@ export default function App() {
 
         {activeTool === 'convert' && (
           <ConvertTool onDocumentProcessed={handleDocumentProcessed} />
+        )}
+        </>
         )}
       </main>
 
