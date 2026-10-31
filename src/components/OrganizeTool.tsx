@@ -154,6 +154,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           peerCount={crdt.peerCount}
           pdfProgress={crdt.pdfProgress}
           syncStatus={crdt.syncStatus}
+          transferLog={crdt.transferLog}
           onRequestPdf={crdt.requestPdfFromPeers}
           onUploadFile={onUploadFile}
         />

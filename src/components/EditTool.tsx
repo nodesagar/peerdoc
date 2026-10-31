@@ -321,6 +321,7 @@ export const EditTool: React.FC<EditToolProps> = ({
           peerCount={crdt.peerCount}
           pdfProgress={crdt.pdfProgress}
           syncStatus={crdt.syncStatus}
+          transferLog={crdt.transferLog}
           onRequestPdf={crdt.requestPdfFromPeers}
           onUploadFile={onUploadFile}
           onImportSync={crdt.importSync}

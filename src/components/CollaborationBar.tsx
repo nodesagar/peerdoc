@@ -6,6 +6,7 @@ interface CollaborationBarProps {
   documentId: string | null;
   syncStatus: SyncStatus;
   peerCount: number;
+  servingCount?: number;
   onExportSync: () => void;
   onImportSync: (file: File) => void;
 }
@@ -14,6 +15,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   documentId,
   syncStatus,
   peerCount,
+  servingCount = 0,
   onExportSync,
   onImportSync,
 }) => {
@@ -67,6 +69,16 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           </span>
         )}
       </div>
+
+      {servingCount > 0 && (
+        <span
+          className="flex items-center space-x-1 text-[#005db2] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-medium shrink-0"
+          title="A peer requested the original PDF; it is being sent to them now"
+        >
+          <Upload className="w-3.5 h-3.5 animate-pulse" />
+          <span>Sending PDF{servingCount > 1 ? ` to ${servingCount}` : ''}</span>
+        </span>
+      )}
 
       <div className="h-3.5 w-px bg-black/10 shrink-0" />
 

@@ -10,6 +10,7 @@ interface HeaderProps {
   documentId: string | null;
   syncStatus: SyncStatus;
   peerCount: number;
+  servingCount?: number;
   onExportSync: () => void;
   onImportSync: (file: File) => void;
 }
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   documentId,
   syncStatus,
   peerCount,
+  servingCount,
   onExportSync,
   onImportSync,
 }) => {
@@ -97,6 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
             documentId={documentId}
             syncStatus={syncStatus}
             peerCount={peerCount}
+            servingCount={servingCount}
             onExportSync={onExportSync}
             onImportSync={onImportSync}
           />

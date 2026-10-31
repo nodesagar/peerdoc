@@ -26,6 +26,9 @@ import {
   setPageDeletedCRDT,
 } from '../lib/crdt/schema';
 import { createP2PProvider, P2PProviderHandle } from '../lib/crdt/p2pProvider';
+import { PdfTransferEvent } from '../lib/crdt/docSync';
+
+export type TransferLogEntry = PdfTransferEvent & { at: number };
 import { exportSyncFile, importSyncFile, downloadSyncFile } from '../lib/crdt/fileSync';
 import { getOriginalPDF, storeOriginalPDF } from '../lib/crdt/pdfStore';
 import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata } from '../types';
@@ -57,6 +60,9 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const [rawPdfBytes, setRawPdfBytes] = useState<Uint8Array | null>(initialPdfBytes || null);
   const [pdfProgress, setPdfProgress] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  // Receiving side: what happened to our PDF request. Sending side: active uploads.
+  const [transferLog, setTransferLog] = useState<TransferLogEntry[]>([]);
+  const [servingCount, setServingCount] = useState<number>(0);
 
   const providerHandleRef = useRef<P2PProviderHandle | null>(null);
   const docRef = useRef<Y.Doc | null>(null);
@@ -106,6 +112,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     setSyncStatus('connecting');
     setPeerCount(0);
     setPdfProgress(null);
+    setTransferLog([]);
+    setServingCount(0);
     setRawPdfBytes(initialPdfBytes || null);
     rawPdfBytesRef.current = initialPdfBytes || null;
 
@@ -170,6 +178,13 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
           },
           onPdfProgress: (progress) => {
             if (!isCancelled) setPdfProgress(progress);
+          },
+          onPdfTransferEvent: (event) => {
+            if (isCancelled) return;
+            console.info('[EditorDoc PDF]', event.kind, event);
+            if (event.kind === 'serving') setServingCount((n) => n + 1);
+            else if (event.kind === 'served') setServingCount((n) => Math.max(0, n - 1));
+            else setTransferLog((log) => [...log, { ...event, at: Date.now() }].slice(-12));
           },
         });
 
@@ -333,7 +348,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   );
 
   const requestPdfFromPeers = useCallback(() => {
-    providerHandleRef.current?.engine.requestPDFFromPeers();
+    // Explicit user action: ask on every route, relay included
+    providerHandleRef.current?.engine.requestPDFFromPeers(true, true);
   }, []);
 
   return {
@@ -350,6 +366,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     peerCount,
     rawPdfBytes,
     pdfProgress,
+    transferLog,
+    servingCount,
     isLoaded,
     requestPdfFromPeers,
     // Mutations

@@ -173,6 +173,7 @@ export default function App() {
         documentId={documentId}
         syncStatus={crdt.syncStatus}
         peerCount={crdt.peerCount}
+        servingCount={crdt.servingCount}
         onExportSync={crdt.exportSync}
         onImportSync={crdt.importSync}
       />

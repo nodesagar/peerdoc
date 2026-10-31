@@ -216,6 +216,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           peerCount={crdt.peerCount}
           pdfProgress={crdt.pdfProgress}
           syncStatus={crdt.syncStatus}
+          transferLog={crdt.transferLog}
           onRequestPdf={crdt.requestPdfFromPeers}
           onUploadFile={onUploadFile}
         />

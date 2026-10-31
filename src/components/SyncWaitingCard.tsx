@@ -13,13 +13,37 @@ import {
   ArrowLeft,
   Info,
   FolderSync,
+  CheckCircle2,
+  XCircle,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
+import type { TransferLogEntry } from '../hooks/useCRDTSync';
+import { formatBytes } from '../utils/pdfProcessor';
+
+function describe(e: TransferLogEntry): { text: string; tone: 'info' | 'ok' | 'warn' } {
+  switch (e.kind) {
+    case 'requested':
+      return { text: `Asked ${e.peers} ${e.peers === 1 ? 'peer' : 'peers'} for the PDF via ${e.routes.join(' + ')}`, tone: 'info' };
+    case 'offered':
+      return { text: `Request accepted by peer ${e.peer}: sending ${formatBytes(e.bytes)} in ${e.totalChunks} chunks via ${e.route}`, tone: 'ok' };
+    case 'unavailable':
+      return { text: `Peer ${e.peer} (${e.route}) doesn't have the PDF either; still asking others`, tone: 'warn' };
+    case 'verify-failed':
+      return { text: `Received data failed verification (${e.reason}); requesting again`, tone: 'warn' };
+    case 'received':
+      return { text: `PDF received and verified (${formatBytes(e.bytes)})`, tone: 'ok' };
+    default:
+      return { text: '', tone: 'info' };
+  }
+}
 
 interface SyncWaitingCardProps {
   documentId: string;
   peerCount: number;
   pdfProgress: number | null;
   syncStatus?: string;
+  transferLog?: TransferLogEntry[];
   onRequestPdf?: () => void;
   onUploadFile?: (file: File) => void;
   onImportSync?: (file: File) => void;
@@ -30,6 +54,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   documentId,
   peerCount,
   pdfProgress,
+  transferLog = [],
   onRequestPdf,
   onUploadFile,
   onImportSync,
@@ -93,6 +118,10 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   };
 
   const isTransferring = pdfProgress !== null && pdfProgress >= 0;
+  const accepted = transferLog.some((e) => e.kind === 'offered');
+  const asked = transferLog.some((e) => e.kind === 'requested');
+  // Only discouraging if the latest news is a refusal (not a newer request)
+  const onlyRefusals = !accepted && transferLog.at(-1)?.kind === 'unavailable';
 
   return (
     <div className="max-w-[720px] mx-auto px-4 py-12 animate-in fade-in duration-200">
@@ -135,6 +164,8 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
           <h2 className="text-xl md:text-2xl font-bold text-[#1a1c1c] tracking-tight">
             {isTransferring
               ? `Transferring Document (${pdfProgress}%)`
+              : accepted
+              ? 'Request Accepted, Starting Transfer'
               : peerCount > 0
               ? 'Synchronizing with Peer'
               : 'Connecting to Document Room'}
@@ -143,8 +174,14 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
           <p className="text-xs md:text-sm text-[#5f6368] max-w-md mx-auto leading-relaxed">
             {isTransferring
               ? 'Receiving binary PDF chunks directly from your peer over WebRTC. The document will open automatically once verified.'
+              : accepted
+              ? 'A peer that has the PDF accepted the request. Chunks should start arriving shortly.'
+              : onlyRefusals
+              ? 'The peers connected so far do not have the PDF. Make sure the person who shared the link still has it open.'
               : peerCount > 0
-              ? 'Connected to document peers. Requesting the original PDF binary data...'
+              ? asked
+                ? 'Connected to document peers. Waiting for one that has the PDF to accept the request...'
+                : 'Connected to document peers. Requesting the original PDF binary data...'
               : 'Waiting for the document host to connect. Ensure the person who shared this room ID has EditorDoc open in their browser.'}
           </p>
         </div>
@@ -179,6 +216,27 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               <span>Receiving P2P Chunks</span>
               <span className="font-bold text-[#005db2]">{pdfProgress}%</span>
             </div>
+          </div>
+        )}
+
+        {/* Request / transfer status */}
+        {transferLog.length > 0 && (
+          <div className="max-w-md mx-auto text-left bg-[#f4f3f2] rounded-xl border border-black/5 p-3 space-y-1.5" aria-live="polite">
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6368]">PDF request status</div>
+            <ul className="space-y-1">
+              {transferLog.map((e, i) => {
+                const { text, tone } = describe(e);
+                const Icon = tone === 'ok' ? (e.kind === 'received' ? CheckCircle2 : Send) : tone === 'warn' ? (e.kind === 'verify-failed' ? XCircle : AlertTriangle) : RefreshCw;
+                const color = tone === 'ok' ? 'text-emerald-700' : tone === 'warn' ? 'text-amber-700' : 'text-[#414753]';
+                return (
+                  <li key={i} className={`flex items-start gap-2 text-[11px] leading-snug ${color}`}>
+                    <Icon className="w-3.5 h-3.5 mt-px shrink-0" />
+                    <span className="flex-1">{text}</span>
+                    <span className="font-mono text-black/40 shrink-0">{new Date(e.at).toLocaleTimeString()}</span>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 
