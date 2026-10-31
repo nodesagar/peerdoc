@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { PDFDocument, PDFPage, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { PDFDocument as PDFDocumentPlus } from 'pdf-lib-plus-encrypt';
 import { PDFMetadataInfo, RedactionBox, WhiteoutBox, TextOverlay, SignatureBox, PageMetadata } from '../types';
 import { DocumentSnapshot } from '../lib/crdt/schema';
@@ -35,12 +35,8 @@ export async function compressPDF(
 
   const compressedBuffer = await pdfDoc.save({ useObjectStreams: true });
   const originalSizeBytes = pdfBuffer.byteLength;
-  let compressedSizeBytes = compressedBuffer.byteLength;
-
-  if (compressedSizeBytes >= originalSizeBytes) {
-    const ratio = quality === 'extreme' ? 0.45 : quality === 'recommended' ? 0.65 : 0.85;
-    compressedSizeBytes = Math.round(originalSizeBytes * ratio);
-  }
+  // Report the real size; never invent savings.
+  const compressedSizeBytes = compressedBuffer.byteLength;
 
   return {
     compressedBuffer,
@@ -49,90 +45,109 @@ export async function compressPDF(
   };
 }
 
+export interface PageRedactionJob {
+  sourceIndex: number; // page index in rawPdfBuffer
+  rotation: number; // extra CRDT rotation to re-apply
+  viewRotation: number; // page's intrinsic /Rotate, as the editor displayed it
+  boxes: RedactionBox[];
+}
+
+type PctRect = { x: number; y: number; width: number; height: number };
+
+/**
+ * Coordinate frame of a page as the editor shows it: pdf.js renders the CropBox
+ * (whose origin need not be 0,0) turned by the page's intrinsic /Rotate. Overlays
+ * are stored as percentages of that view; this maps them back to PDF user space.
+ */
+export function getPageFrame(page: PDFPage, viewRotation: number) {
+  const { x: x0, y: y0, width: W, height: H } = page.getCropBox();
+  const rotation = ((Math.round(viewRotation / 90) * 90) % 360 + 360) % 360;
+  const swap = rotation === 90 || rotation === 270;
+  const width = swap ? H : W; // displayed size
+  const height = swap ? W : H;
+
+  /** (dx, dy) in points from the displayed top-left corner -> PDF user space. */
+  const toPdf = (dx: number, dy: number): [number, number] => {
+    switch (rotation) {
+      case 90:
+        return [x0 + dy, y0 + dx];
+      case 180:
+        return [x0 + W - dx, y0 + dy];
+      case 270:
+        return [x0 + W - dy, y0 + H - dx];
+      default:
+        return [x0 + dx, y0 + H - dy];
+    }
+  };
+
+  const rect = (r: PctRect) => {
+    const [ax, ay] = toPdf((r.x / 100) * width, (r.y / 100) * height);
+    const [bx, by] = toPdf(((r.x + r.width) / 100) * width, ((r.y + r.height) / 100) * height);
+    return { x: Math.min(ax, bx), y: Math.min(ay, by), width: Math.abs(bx - ax), height: Math.abs(by - ay) };
+  };
+
+  return { width, height, rotation, toPdf, rect };
+}
+
 /**
  * True Redaction engine:
- * In browser environment, renders the redacted page on HTML Canvas using pdfjs,
- * paints black redaction boxes directly over the pixels (erasing underlying vectors/text),
- * and replaces the page with a clean rasterized image.
- * If canvas is unavailable (e.g. headless node tests), burns solid black rectangles and scrubs metadata.
+ * In a browser, renders the source page with pdf.js, paints black boxes into the pixels,
+ * and REPLACES the output page with an image-only page, so no text/vector content survives.
+ * Without a DOM (node tests) it falls back to drawing vector boxes (content NOT scrubbed).
  */
 export async function applyTrueRedactions(
   pdfDoc: PDFDocument,
-  redactionsByOriginalIndex: Map<number, RedactionBox[]>,
+  jobsByOutputIndex: Map<number, PageRedactionJob>,
   rawPdfBuffer: Uint8Array
-): Promise<void> {
-  const pages = pdfDoc.getPages();
+): Promise<Set<number>> {
+  const rasterized = new Set<number>();
+  const canRasterize = typeof window !== 'undefined' && typeof document !== 'undefined';
+  const sourcePdf = canRasterize
+    ? await (await import('pdfjs-dist')).getDocument({ data: rawPdfBuffer.slice() }).promise
+    : null;
 
-  // For each page that has redactions:
-  for (const [pageIdx, reds] of redactionsByOriginalIndex.entries()) {
-    if (pageIdx < 0 || pageIdx >= pages.length) continue;
-    const page = pages[pageIdx];
-    const { width: pWidth, height: pHeight } = page.getSize();
+  for (const [outIdx, job] of jobsByOutputIndex.entries()) {
+    if (outIdx < 0 || outIdx >= pdfDoc.getPageCount()) continue;
 
-    // Check if we can do full canvas pixel burning (truly scrubs underlying text)
-    let rasterized = false;
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      try {
-        const pdfjs = await import('pdfjs-dist');
-        const loadingTask = pdfjs.getDocument({ data: rawPdfBuffer.slice() });
-        const sourcePdf = await loadingTask.promise;
-        const pdfPage = await sourcePdf.getPage(pageIdx + 1);
-
-        const scale = 2.0; // High DPI render
-        const viewport = pdfPage.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-
-        if (ctx) {
-          await (pdfPage.render as any)({ canvasContext: ctx, viewport, canvas }).promise;
-
-          // Paint solid black boxes over sensitive areas directly into canvas pixels
-          ctx.fillStyle = '#000000';
-          for (const red of reds) {
-            const rx = (red.x / 100) * viewport.width;
-            const ry = (red.y / 100) * viewport.height;
-            const rw = (red.width / 100) * viewport.width;
-            const rh = (red.height / 100) * viewport.height;
-            ctx.fillRect(rx, ry, rw, rh);
-          }
-
-          const pngDataUrl = canvas.toDataURL('image/png');
-          const embeddedImage = await pdfDoc.embedPng(pngDataUrl);
-
-          // Draw the sanitized pixel canvas over the page
-          page.drawImage(embeddedImage, {
-            x: 0,
-            y: 0,
-            width: pWidth,
-            height: pHeight,
-          });
-
-          rasterized = true;
-        }
-      } catch (err) {
-        console.warn('Canvas rasterization redaction fallback to vector boxes:', err);
+    if (!sourcePdf) {
+      const page = pdfDoc.getPage(outIdx);
+      const frame = getPageFrame(page, job.viewRotation);
+      for (const red of job.boxes) {
+        page.drawRectangle({ ...frame.rect(red), color: rgb(0, 0, 0) });
       }
+      continue;
     }
 
-    if (!rasterized) {
-      // Fallback: draw solid black vector boxes
-      for (const red of reds) {
-        const x = (red.x / 100) * pWidth;
-        const y = pHeight - ((red.y + red.height) / 100) * pHeight;
-        const w = (red.width / 100) * pWidth;
-        const h = (red.height / 100) * pHeight;
+    // Errors propagate: silently exporting un-scrubbed text would be a data leak.
+    const pdfPage = await sourcePdf.getPage(job.sourceIndex + 1);
+    const scale = 2.0; // High DPI render
+    const viewport = pdfPage.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas 2D context unavailable; cannot burn redactions');
 
-        page.drawRectangle({
-          x: Math.max(0, x),
-          y: Math.max(0, y),
-          width: Math.min(pWidth, w),
-          height: Math.min(pHeight, h),
-          color: rgb(0, 0, 0),
-        });
-      }
+    await (pdfPage.render as any)({ canvasContext: ctx, viewport, canvas }).promise;
+    ctx.fillStyle = '#000000';
+    for (const red of job.boxes) {
+      ctx.fillRect(
+        (red.x / 100) * canvas.width,
+        (red.y / 100) * canvas.height,
+        (red.width / 100) * canvas.width,
+        (red.height / 100) * canvas.height
+      );
     }
+
+    const embeddedImage = await pdfDoc.embedPng(canvas.toDataURL('image/png'));
+    const w = viewport.width / scale;
+    const h = viewport.height / scale;
+    pdfDoc.removePage(outIdx);
+    const cleanPage = pdfDoc.insertPage(outIdx, [w, h]);
+    cleanPage.drawImage(embeddedImage, { x: 0, y: 0, width: w, height: h });
+    // Intrinsic /Rotate is baked into the raster; only re-apply the user's rotation.
+    if (job.rotation) cleanPage.setRotation(degrees(job.rotation % 360));
+    rasterized.add(outIdx);
   }
 
   // Always scrub sensitive metadata
@@ -142,6 +157,7 @@ export async function applyTrueRedactions(
   pdfDoc.setCreator('');
   pdfDoc.setProducer('EditorDoc P2P Sanitizer');
   pdfDoc.setKeywords([]);
+  return rasterized;
 }
 
 /**
@@ -154,8 +170,13 @@ export async function buildConvergedPDF(
   const sourceDoc = await PDFDocument.load(originalPdfBuffer, { ignoreEncryption: true });
   const newDoc = await PDFDocument.create();
 
-  // 1. Process active pages (non-deleted, sorted by fractional index)
-  const activePages = snapshot.pages.filter((p) => !p.deleted);
+  // 1. Process active pages (non-deleted, sorted by fractional index).
+  // No page metadata (CRDT not initialised yet) means "original order", not "all deleted".
+  const pages: PageMetadata[] =
+    snapshot.pages.length > 0
+      ? snapshot.pages
+      : sourceDoc.getPageIndices().map((i) => ({ id: `page-${i}`, originalIndex: i, order: '', rotation: 0, deleted: false }));
+  const activePages = pages.filter((p) => !p.deleted);
   const pageIndicesToCopy = activePages.map((p) => p.originalIndex);
 
   if (pageIndicesToCopy.length === 0) {
@@ -166,17 +187,20 @@ export async function buildConvergedPDF(
 
   const copiedPages = await newDoc.copyPages(sourceDoc, pageIndicesToCopy);
 
-  // Map to group redactions by new page index
-  const redactionsByNewIndex = new Map<number, RedactionBox[]>();
+  // Redaction jobs keyed by output page index
+  const redactionsByNewIndex = new Map<number, PageRedactionJob>();
+  // Intrinsic rotation per output page = orientation overlays were drawn in
+  const viewRotations: number[] = [];
 
   for (let i = 0; i < copiedPages.length; i++) {
     const page = copiedPages[i];
     const pageMeta = activePages[i];
+    const intrinsic = page.getRotation().angle;
+    viewRotations.push(intrinsic);
 
     // Apply rotation
     if (pageMeta.rotation && pageMeta.rotation !== 0) {
-      const currentRot = page.getRotation().angle;
-      page.setRotation(degrees((currentRot + pageMeta.rotation) % 360));
+      page.setRotation(degrees((intrinsic + pageMeta.rotation) % 360));
     }
 
     newDoc.addPage(page);
@@ -186,16 +210,24 @@ export async function buildConvergedPDF(
       (r) => r.pageIndex === pageMeta.originalIndex
     );
     if (pageRedactions.length > 0) {
-      redactionsByNewIndex.set(i, pageRedactions);
+      redactionsByNewIndex.set(i, {
+        sourceIndex: pageMeta.originalIndex,
+        rotation: pageMeta.rotation || 0,
+        viewRotation: intrinsic,
+        boxes: pageRedactions,
+      });
     }
   }
 
   // 2. Apply True Redactions
   if (redactionsByNewIndex.size > 0) {
-    await applyTrueRedactions(newDoc, redactionsByNewIndex, originalPdfBuffer);
+    // Rasterized pages have the intrinsic rotation baked into their pixels
+    const replaced = await applyTrueRedactions(newDoc, redactionsByNewIndex, originalPdfBuffer);
+    replaced.forEach((idx) => (viewRotations[idx] = 0));
   }
 
   const finalPages = newDoc.getPages();
+  const frameOf = (idx: number) => getPageFrame(finalPages[idx], viewRotations[idx]);
 
   // 3. Apply Whiteouts
   for (const w of snapshot.whiteouts) {
@@ -203,12 +235,6 @@ export async function buildConvergedPDF(
     const targetIdx = activePages.findIndex((p) => p.originalIndex === w.pageIndex);
     if (targetIdx >= 0 && targetIdx < finalPages.length) {
       const page = finalPages[targetIdx];
-      const { width: pWidth, height: pHeight } = page.getSize();
-
-      const x = (w.x / 100) * pWidth;
-      const y = pHeight - ((w.y + w.height) / 100) * pHeight;
-      const boxW = (w.width / 100) * pWidth;
-      const boxH = (w.height / 100) * pHeight;
 
       let wr = 1, wg = 1, wb = 1;
       if (w.color && w.color.startsWith('#')) {
@@ -220,13 +246,7 @@ export async function buildConvergedPDF(
         }
       }
 
-      page.drawRectangle({
-        x: Math.max(0, x),
-        y: Math.max(0, y),
-        width: Math.min(pWidth, boxW),
-        height: Math.min(pHeight, boxH),
-        color: rgb(wr, wg, wb),
-      });
+      page.drawRectangle({ ...frameOf(targetIdx).rect(w), color: rgb(wr, wg, wb) });
     }
   }
 
@@ -235,10 +255,13 @@ export async function buildConvergedPDF(
     const targetIdx = activePages.findIndex((p) => p.originalIndex === t.pageIndex);
     if (targetIdx >= 0 && targetIdx < finalPages.length) {
       const page = finalPages[targetIdx];
-      const { width: pWidth, height: pHeight } = page.getSize();
-
-      const x = (t.x / 100) * pWidth;
-      const y = pHeight - (t.y / 100) * pHeight - t.fontSize;
+      const frame = frameOf(targetIdx);
+      // Editor box has 1px border + px-1/py-0.5 padding; baseline sits ~0.83em below
+      // the text line top for normal line-height. 1 CSS px = 1pt at scale 1.
+      const [x, y] = frame.toPdf(
+        (t.x / 100) * frame.width + 5,
+        (t.y / 100) * frame.height + 3 + t.fontSize * 0.83
+      );
 
       let r = 0, g = 0, b = 0;
       if (t.color && t.color.startsWith('#')) {
@@ -269,12 +292,18 @@ export async function buildConvergedPDF(
       }
 
       const font = await newDoc.embedFont(fontType);
-      page.drawText(t.text, {
+      // Standard fonts are WinAnsi-only; one emoji/CJK char would abort the whole export.
+      const supported = new Set(font.getCharacterSet());
+      const safeText = Array.from(t.text)
+        .map((ch) => (supported.has(ch.codePointAt(0)!) ? ch : '?'))
+        .join('');
+      page.drawText(safeText, {
         x,
         y,
         size: t.fontSize,
         font,
         color: rgb(r, g, b),
+        rotate: degrees(frame.rotation), // stays upright in the rotated view
       });
     }
   }
@@ -284,21 +313,17 @@ export async function buildConvergedPDF(
     const targetIdx = activePages.findIndex((p) => p.originalIndex === sig.pageIndex);
     if (targetIdx >= 0 && targetIdx < finalPages.length && sig.dataUrl) {
       const page = finalPages[targetIdx];
-      const { width: pWidth, height: pHeight } = page.getSize();
+      const frame = frameOf(targetIdx);
 
       try {
-        const pngImage = await newDoc.embedPng(sig.dataUrl);
-        const x = (sig.x / 100) * pWidth;
-        const y = pHeight - ((sig.y + sig.height) / 100) * pHeight;
-        const w = (sig.width / 100) * pWidth;
-        const h = (sig.height / 100) * pHeight;
-
-        page.drawImage(pngImage, {
-          x,
-          y,
-          width: w,
-          height: h,
-        });
+        const pngImage = /^data:image\/jpe?g/i.test(sig.dataUrl)
+          ? await newDoc.embedJpg(sig.dataUrl)
+          : await newDoc.embedPng(sig.dataUrl);
+        // Anchor at the image's displayed bottom-left, rotated with the view
+        const w = (sig.width / 100) * frame.width;
+        const h = (sig.height / 100) * frame.height;
+        const [x, y] = frame.toPdf((sig.x / 100) * frame.width, ((sig.y + sig.height) / 100) * frame.height);
+        page.drawImage(pngImage, { x, y, width: w, height: h, rotate: degrees(frame.rotation) });
       } catch (err) {
         console.warn('Failed to embed signature PNG:', err);
       }
@@ -551,12 +576,7 @@ export async function imagesToPDF(imageUrls: string[]): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
 
   for (const url of imageUrls) {
-    let image;
-    if (url.includes('image/png')) {
-      image = await pdfDoc.embedPng(url);
-    } else {
-      image = await pdfDoc.embedJpg(url);
-    }
+    const image = /^data:image\/jpe?g/i.test(url) ? await pdfDoc.embedJpg(url) : await pdfDoc.embedPng(url);
 
     const page = pdfDoc.addPage([image.width, image.height]);
     page.drawImage(image, {

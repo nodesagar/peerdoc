@@ -130,5 +130,10 @@ export async function createSampleConfidentialAgreement(): Promise<Uint8Array> {
     }
   );
 
+  // Fixed timestamps: document ID = SHA-256(bytes), so the demo must be byte-identical
+  // on every load/machine to land in the same collaboration room.
+  const fixedDate = new Date(Date.UTC(2025, 0, 1));
+  pdfDoc.setCreationDate(fixedDate);
+  pdfDoc.setModificationDate(fixedDate);
   return await pdfDoc.save();
 }

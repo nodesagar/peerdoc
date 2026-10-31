@@ -51,9 +51,10 @@ export const CompressTool: React.FC<CompressToolProps> = ({
     try {
       setIsCompressing(true);
 
-      // If crdt is provided and has edits, compress the converged document!
+      // Apply CRDT edits only when compressing the active collaborative document,
+      // never to an unrelated file picked in this tool.
       let inputBuffer = fileBuffer;
-      if (crdt && crdt.snapshot) {
+      if (crdt && fileBuffer === rawPdfBytes) {
         inputBuffer = await buildConvergedPDF(fileBuffer, crdt.snapshot);
       }
 
