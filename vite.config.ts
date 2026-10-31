@@ -41,9 +41,11 @@ export default defineConfig({
     serviceWorker(),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      // Adds the 'error' listener trystero 0.20 forgets on negotiating peers (see file)
+      { find: /^@thaunknown\/simple-peer$/, replacement: path.resolve(__dirname, 'src/lib/crdt/safeSimplePeer.ts') },
+    ],
   },
   test: {
     globals: true,
