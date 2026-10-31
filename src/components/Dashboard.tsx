@@ -272,7 +272,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <h3 className="text-lg font-bold text-[#1a1c1c]">Compress</h3>
             <p className="text-xs text-[#5f6368] leading-relaxed">
-              Shrink file sizes locally with stream optimization without compromising document clarity.
+              Shrink scanned and photo-heavy PDFs locally by re-encoding images. Text stays sharp.
             </p>
           </div>
           <div className="pt-4 flex items-center text-xs font-semibold text-amber-600 group-hover:translate-x-1 transition-transform">
