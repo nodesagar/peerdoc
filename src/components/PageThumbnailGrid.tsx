@@ -164,7 +164,7 @@ interface PageThumbnailGridProps {
   selectedPages: number[];
   deletedPages: number[];
   rotations: Record<number, number>;
-  onReorder: (newOrder: number[]) => void;
+  onReorder: (newOrder: number[], movedOriginalIndex: number) => void;
   onToggleSelect: (originalIndex: number) => void;
   onToggleDelete: (originalIndex: number) => void;
   onRotate: (originalIndex: number, direction: 'cw' | 'ccw') => void;
@@ -190,7 +190,7 @@ export const PageThumbnailGrid: React.FC<PageThumbnailGridProps> = ({
     if (over && active.id !== over.id) {
       const oldIndex = pageOrder.indexOf(Number(active.id));
       const newIndex = pageOrder.indexOf(Number(over.id));
-      onReorder(arrayMove(pageOrder, oldIndex, newIndex));
+      onReorder(arrayMove(pageOrder, oldIndex, newIndex), Number(active.id));
     }
   };
 

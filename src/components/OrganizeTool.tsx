@@ -69,25 +69,15 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
     }
   };
 
-  const handleReorder = (newOriginalIndexOrder: number[]) => {
-    // When dragged, find which page was moved and update its fractional index
-    for (let i = 0; i < newOriginalIndexOrder.length; i++) {
-      const origIdx = newOriginalIndexOrder[i];
-      const pageMeta = crdt.pages.find((p) => p.originalIndex === origIdx);
-      if (!pageMeta) continue;
-
-      const prevOrigIdx = i > 0 ? newOriginalIndexOrder[i - 1] : null;
-      const nextOrigIdx = i < newOriginalIndexOrder.length - 1 ? newOriginalIndexOrder[i + 1] : null;
-
-      const prevMeta = prevOrigIdx !== null ? crdt.pages.find((p) => p.originalIndex === prevOrigIdx) : null;
-      const nextMeta = nextOrigIdx !== null ? crdt.pages.find((p) => p.originalIndex === nextOrigIdx) : null;
-
-      const prevOrder = prevMeta ? prevMeta.order : null;
-      const nextOrder = nextMeta ? nextMeta.order : null;
-
-      crdt.movePage(pageMeta.id, prevOrder, nextOrder);
-      break; // Single move per drag event
-    }
+  const handleReorder = (newOriginalIndexOrder: number[], movedOriginalIndex: number) => {
+    // Re-key only the dragged page between its new neighbours
+    const i = newOriginalIndexOrder.indexOf(movedOriginalIndex);
+    const byOrig = (idx: number | undefined) => crdt.pages.find((p) => p.originalIndex === idx);
+    const pageMeta = byOrig(movedOriginalIndex);
+    if (!pageMeta || i < 0) return;
+    const prevMeta = byOrig(newOriginalIndexOrder[i - 1]);
+    const nextMeta = byOrig(newOriginalIndexOrder[i + 1]);
+    crdt.movePage(pageMeta.id, prevMeta?.order ?? null, nextMeta?.order ?? null);
   };
 
   const handleRotateAll = (direction: 'cw' | 'ccw') => {
@@ -134,7 +124,9 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
     if (!rawPdfBytes || selectedPages.length === 0) return;
     try {
       setIsProcessing(true);
-      const extractedBytes = await splitPDF(rawPdfBytes, selectedPages);
+      // Extract in current (organized) order, not click order
+      const ordered = pageOrder.filter((idx) => selectedPages.includes(idx));
+      const extractedBytes = await splitPDF(rawPdfBytes, ordered);
       const outputName = fileName.replace(/\.pdf$/i, '') + '-extracted.pdf';
       downloadUint8ArrayAsFile(extractedBytes, outputName);
 
@@ -257,14 +249,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
 
       {/* Thumbnails Grid with Dnd */}
       <div className="bg-white/60 backdrop-blur rounded-2xl border border-black/10 p-8 shadow-2xs min-h-[500px]">
-        <Document
-          file={pdfBlobUrl}
-          onLoadSuccess={({ numPages }) => {
-            if (crdt.pages.length === 0) {
-              crdt.initDocument(fileName, numPages);
-            }
-          }}
-        >
+        <Document file={pdfBlobUrl}>
           <PageThumbnailGrid
             pageOrder={pageOrder}
             selectedPages={selectedPages}
