@@ -6,14 +6,10 @@ export type ActiveTool =
   | 'split'
   | 'sign'
   | 'organize'
-  | 'more'
   | 'edit'
-  | 'ai'
-  | 'request'
   | 'watermark'
   | 'convert'
-  | 'encrypt'
-  | 'convert-word';
+  | 'encrypt';
 
 export interface ProcessedDoc {
   id: string;
