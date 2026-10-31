@@ -68,7 +68,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   };
 
   return (
-    <div className="flex items-center flex-nowrap space-x-2 text-xs bg-white/90 backdrop-blur border border-black/10 rounded-xl px-2.5 py-1 shadow-2xs h-[34px] shrink-0">
+    <div className="flex items-center flex-nowrap space-x-1 sm:space-x-2 text-xs bg-white/90 backdrop-blur border border-black/10 rounded-xl px-1.5 sm:px-2.5 py-1 shadow-2xs h-[34px] shrink-0">
       {/* Sync / P2P Status Indicator */}
       <div className="flex items-center space-x-1.5 font-medium shrink-0">
         {peerCount > 0 ? (
@@ -78,12 +78,16 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <Users className="w-3.5 h-3.5" />
-            <span>{peerCount} {peerCount === 1 ? 'Peer' : 'Peers'}</span>
+            <span>
+              {peerCount}
+              <span className="hidden sm:inline"> {peerCount === 1 ? 'Peer' : 'Peers'}</span>
+            </span>
           </span>
         ) : (
           <span className="flex items-center space-x-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200" title="CRDT changes saved locally in IndexedDB; will sync when peers connect">
             <WifiOff className="w-3.5 h-3.5" />
-            <span>Offline (Saved)</span>
+            <span className="hidden sm:inline">Offline (Saved)</span>
+            <span className="sr-only sm:hidden">Offline, changes saved</span>
           </span>
         )}
       </div>
@@ -100,7 +104,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         </span>
       )}
 
-      <div className="h-3.5 w-px bg-black/10 shrink-0" />
+      <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
 
       {/* Undo / Redo (only this user's edits) */}
       <div className="flex items-center shrink-0">
@@ -124,7 +128,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         </button>
       </div>
 
-      <div className="h-3.5 w-px bg-black/10 shrink-0" />
+      <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
 
       {/* Room ID & Share */}
       <div className="flex items-center space-x-1 shrink-0">
@@ -132,33 +136,36 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           onClick={handleCopyLink}
           className="flex items-center space-x-1 text-[#414753] hover:text-[#005db2] bg-black/[0.04] hover:bg-[#005db2]/10 px-2 py-0.5 rounded-md transition-colors"
           title={`Private room for document ${documentId}\nClick to copy the invite link. Anyone with this link can view and edit.`}
+          aria-label="Copy invite link"
         >
           <Lock className="w-3 h-3 text-[#005db2]" />
-          <span className="font-mono text-[11px] font-semibold">{shortDocId}</span>
+          <span className="hidden sm:inline font-mono text-[11px] font-semibold">{shortDocId}</span>
           {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-black/40" />}
         </button>
       </div>
 
       <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
 
-      {/* Offline Store-and-Forward CDS buttons */}
-      <div className="flex items-center space-x-1 shrink-0">
+      {/* Offline Store-and-Forward CDS buttons (in the header menu on phones) */}
+      <div className="hidden sm:flex items-center space-x-1 shrink-0">
         <button
           onClick={onExportSync}
           className="flex items-center space-x-1 text-[#414753] hover:text-[#1a1c1c] hover:bg-black/[0.05] px-2 py-0.5 rounded-md transition-colors"
           title="Export current CRDT state as .cdsync file for air-gapped / offline sync"
+          aria-label="Export .cdsync"
         >
           <Download className="w-3 h-3 text-black/60" />
-          <span className="hidden md:inline">Export .cdsync</span>
+          <span className="hidden 2xl:inline">Export .cdsync</span>
         </button>
 
         <button
           onClick={() => fileInputRef.current?.click()}
           className="flex items-center space-x-1 text-[#414753] hover:text-[#1a1c1c] hover:bg-black/[0.05] px-2 py-0.5 rounded-md transition-colors"
           title="Import .cdsync file to apply offline peer updates"
+          aria-label="Import .cdsync"
         >
           <Upload className="w-3 h-3 text-black/60" />
-          <span className="hidden md:inline">Import .cdsync</span>
+          <span className="hidden 2xl:inline">Import .cdsync</span>
         </button>
         <input
           type="file"
