@@ -9,6 +9,7 @@ import {
   uint8ArrayToBase64,
   normalizeToUint8Array,
 } from './pdfStore';
+import { roomChannel } from './roomKey';
 
 export interface PeerMessage {
   type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable';
@@ -44,6 +45,8 @@ export type PdfTransferEvent =
 export interface DocSyncOptions {
   doc: Y.Doc;
   documentId: string;
+  /** Secret from the share link; transports join roomChannel(documentId, roomKey). */
+  roomKey?: string;
   transports: SyncTransport[];
   getLocalPdfBytes?: () => Uint8Array | null;
   onPeersChange?: (peersCount: number) => void;
@@ -100,7 +103,7 @@ export class DocSyncEngine {
       transport.onPeerJoin((peerId) => this.handlePeerJoin(transport, peerId));
       transport.onPeerLeave((peerId) => this.handlePeerLeave(transport, peerId));
       transport.onMessage((peerId, message) => this.handlePeerMessage(transport, peerId, message));
-      transport.connect(this.documentId);
+      transport.connect(this.options.roomKey ? roomChannel(this.documentId, this.options.roomKey) : this.documentId);
     }
 
     // 3. Start PDF polling to guarantee document retrieval when peers connect

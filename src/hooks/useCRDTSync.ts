@@ -36,6 +36,8 @@ import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageM
 
 export interface UseCRDTSyncOptions {
   documentId: string | null;
+  /** Secret from the share link; peers without it never meet this room. */
+  roomKey?: string | null;
   initialPdfBytes?: Uint8Array | null;
   initialTitle?: string;
   pageCount?: number;
@@ -51,7 +53,7 @@ const EMPTY_SNAPSHOT: DocumentSnapshot = {
 };
 
 export function useCRDTSync(options: UseCRDTSyncOptions) {
-  const { documentId, initialPdfBytes, initialTitle, pageCount } = options;
+  const { documentId, roomKey, initialPdfBytes, initialTitle, pageCount } = options;
 
   const [doc, setDoc] = useState<Y.Doc | null>(null);
   const [snapshot, setSnapshot] = useState<DocumentSnapshot>(EMPTY_SNAPSHOT);
@@ -180,6 +182,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
         // 2. Connect P2P and IndexedDB persistence
         const handle = await createP2PProvider(cleanDocId, ydoc, {
+          roomKey: roomKey ?? undefined,
           getLocalPdfBytes: () => rawPdfBytesRef.current,
           onStatusChange: (status) => {
             if (!isCancelled) setSyncStatus(status);
@@ -251,7 +254,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       if (docRef.current === ydoc) docRef.current = null;
       ydoc.destroy();
     };
-  }, [documentId, pageCount]);
+  }, [documentId, roomKey, pageCount]);
 
   // ================= Mutation Helpers =================
 

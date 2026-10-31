@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wifi, WifiOff, Users, Download, Upload, Copy, Check, Share2, Shield, FolderSync, Undo2, Redo2 } from 'lucide-react';
+import { WifiOff, Users, Download, Upload, Copy, Check, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
 import { SyncStatus } from '../types';
 
 interface CollaborationBarProps {
@@ -42,9 +42,8 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   const shortDocId = `${documentId.slice(0, 6)}...${documentId.slice(-4)}`;
 
   const handleCopyLink = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('doc', documentId);
-    navigator.clipboard.writeText(url.toString());
+    // The address bar holds ?doc=<id>#k=<room key>; that is the invite.
+    navigator.clipboard.writeText(window.location.href);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -119,9 +118,9 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         <button
           onClick={handleCopyLink}
           className="flex items-center space-x-1 text-[#414753] hover:text-[#005db2] bg-black/[0.04] hover:bg-[#005db2]/10 px-2 py-0.5 rounded-md transition-colors"
-          title={`Document Room ID: ${documentId}\nClick to copy collaboration link`}
+          title={`Private room for document ${documentId}\nClick to copy the invite link. Anyone with this link can view and edit.`}
         >
-          <Share2 className="w-3 h-3 text-[#005db2]" />
+          <Lock className="w-3 h-3 text-[#005db2]" />
           <span className="font-mono text-[11px] font-semibold">{shortDocId}</span>
           {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-black/40" />}
         </button>
