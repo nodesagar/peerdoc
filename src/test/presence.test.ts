@@ -81,19 +81,22 @@ describe('presence', () => {
 
   it('coalesces presence over the relay so cursor streams cannot flood brokers', () => {
     vi.useFakeTimers();
-    MemTransport.net.clear();
-    const alice = peer('a', 'Alice', true);
-    const bob = peer('b', 'Bob', true);
-    alice.transport.sent.length = 0;
-    for (let i = 0; i < 20; i++) alice.awareness.setLocalStateField('cursor', { pageIndex: 0, x: i, y: i });
-    expect(alice.transport.sent.filter((m) => m.type === 'awareness')).toHaveLength(0);
-    vi.advanceTimersByTime(450);
-    expect(alice.transport.sent.filter((m) => m.type === 'awareness')).toHaveLength(1);
-    expect(remotePeers(bob.awareness)[0].cursor).toEqual({ pageIndex: 0, x: 19, y: 19 });
-    alice.engine.destroy(); // goodbye is flushed immediately, not after the interval
-    expect(names(bob.awareness)).toEqual([]);
-    bob.engine.destroy();
-    vi.useRealTimers();
+    try {
+      MemTransport.net.clear();
+      const alice = peer('a', 'Alice', true);
+      const bob = peer('b', 'Bob', true);
+      alice.transport.sent.length = 0;
+      for (let i = 0; i < 20; i++) alice.awareness.setLocalStateField('cursor', { pageIndex: 0, x: i, y: i });
+      expect(alice.transport.sent.filter((m) => m.type === 'awareness')).toHaveLength(0);
+      vi.advanceTimersByTime(450);
+      expect(alice.transport.sent.filter((m) => m.type === 'awareness')).toHaveLength(1);
+      expect(remotePeers(bob.awareness)[0].cursor).toEqual({ pageIndex: 0, x: 19, y: 19 });
+      alice.engine.destroy(); // goodbye is flushed immediately, not after the interval
+      expect(names(bob.awareness)).toEqual([]);
+      bob.engine.destroy();
+    } finally {
+      vi.useRealTimers(); // even if an assertion fails, later tests get real timers
+    }
   });
 
   it('formats names and times', () => {

@@ -5,6 +5,9 @@ import { DocSyncEngine, PubSubTransport, PubSubBusFactory } from '../lib/crdt/do
 import { computeSHA256 } from '../lib/crdt/pdfStore';
 import { addWhiteoutCRDT, readDocumentSnapshot } from '../lib/crdt/schema';
 
+/** Poll for async outcomes instead of sleeping a fixed time. */
+const WAIT = { timeout: 4000, interval: 10 };
+
 // In-memory stand-in for a broker topic; serialises like the network would
 function memoryBroker(): PubSubBusFactory {
   const rooms = new Map<string, Set<(m: any) => void>>();
@@ -52,13 +55,14 @@ describe('Encrypted relay transport', () => {
       onPdfAvailable: (bytes) => (received = bytes),
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(engineB.getConnectedPeerCount()).toBe(1);
-    expect(readDocumentSnapshot(docB).whiteouts.length).toBe(1);
+    await vi.waitFor(() => {
+      expect(engineB.getConnectedPeerCount()).toBe(1);
+      expect(readDocumentSnapshot(docB).whiteouts.length).toBe(1);
+    }, WAIT);
 
     // No direct link: the manual request (and the poll after the grace period) uses the relay
     engineB.requestPDFFromPeers();
-    await new Promise((r) => setTimeout(r, 400));
+    await vi.waitFor(() => expect(received).not.toBeNull(), WAIT);
     const got = received as Uint8Array | null; // assigned in callback; TS can't see it
     expect(got?.byteLength).toBe(pdf.byteLength);
     expect(Array.from(got!.subarray(0, 8))).toEqual(Array.from(pdf.subarray(0, 8)));
@@ -114,9 +118,10 @@ describe('Encrypted relay transport', () => {
       transports: [new PubSubTransport('relay', bus, true)],
       onPdfTransferEvent: (e) => events.push(e.kind),
     });
-    await new Promise((r) => setTimeout(r, 50));
+    // Ask only once both peers are linked: a request with no links isn't logged
+    await vi.waitFor(() => expect(me.getConnectedPeerCount()).toBe(2), WAIT);
     me.requestPDFFromPeers(true, true);
-    await new Promise((r) => setTimeout(r, 300));
+    await vi.waitFor(() => expect(events.at(-1)).toBe('received'), WAIT);
 
     expect(events[0]).toBe('requested');
     expect(events).toContain('unavailable'); // otherJoiner has no copy
