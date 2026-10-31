@@ -1,29 +1,11 @@
 import * as Y from 'yjs';
+import { uint8ArrayToBase64, base64ToUint8Array } from './pdfStore';
 
 export interface CDSFileContent {
   format: 'CDSYNC_V1';
   documentId: string;
   timestamp: number;
   updateBase64: string;
-}
-
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
 }
 
 /**

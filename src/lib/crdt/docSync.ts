@@ -13,6 +13,8 @@ import {
 export interface PeerMessage {
   type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk';
   payload: any;
+  /** Sender's engine session ID; lets one remote tab reached over several transports count once. */
+  sender?: string;
 }
 
 export interface SyncTransport {
@@ -47,10 +49,14 @@ export class DocSyncEngine {
   public readonly documentId: string;
   private transports: SyncTransport[];
   private options: DocSyncOptions;
-  private activePeers: Set<string> = new Set();
+  // `${transport}:${peerId}` -> remote session ID (null until its handshake arrives)
+  private activePeers: Map<string, string | null> = new Map();
+  private readonly sessionId = crypto.randomUUID();
   private pdfReassembler: ChunkReassembler | null = null;
   private destroyed = false;
   private pdfPollTimer: any = null;
+  private pdfAcquired = false;
+  private lastChunkAt = 0;
 
   constructor(options: DocSyncOptions) {
     this.doc = options.doc;
@@ -68,7 +74,7 @@ export class DocSyncEngine {
     // 2. Initialize all transports
     for (const transport of this.transports) {
       transport.onPeerJoin((peerId) => this.handlePeerJoin(transport, peerId));
-      transport.onPeerLeave((peerId) => this.handlePeerLeave(peerId));
+      transport.onPeerLeave((peerId) => this.handlePeerLeave(transport, peerId));
       transport.onMessage((peerId, message) => this.handlePeerMessage(transport, peerId, message));
       transport.connect(this.documentId);
     }
@@ -95,7 +101,8 @@ export class DocSyncEngine {
         return;
       }
       // If we have connected peers and still lack PDF, request again
-      if (this.activePeers.size > 0) {
+      // (but not while a transfer is actively streaming in - that restarts it)
+      if (this.activePeers.size > 0 && Date.now() - this.lastChunkAt > 5000) {
         this.requestPDFFromPeers();
       }
     }, 2500);
@@ -110,8 +117,9 @@ export class DocSyncEngine {
 
   private handleLocalDocUpdate = (update: Uint8Array, origin: any) => {
     if (this.destroyed) return;
-    // Skip if incoming from remote peer or file sync
-    if (origin === 'p2p' || origin === 'file-sync') {
+    // Skip if incoming from remote peer (they already have it). File-sync imports
+    // ARE forwarded so currently connected peers receive them too.
+    if (origin === 'p2p') {
       return;
     }
 
@@ -132,7 +140,8 @@ export class DocSyncEngine {
    */
   private async handlePeerJoin(transport: SyncTransport, peerId: string) {
     if (this.destroyed) return;
-    this.activePeers.add(peerId);
+    const key = `${transport.name}:${peerId}`;
+    if (!this.activePeers.has(key)) this.activePeers.set(key, null);
     this.notifyPeers();
 
     // 1. Send our local state vector
@@ -140,6 +149,7 @@ export class DocSyncEngine {
     transport.sendToPeer(peerId, {
       type: 'state-vector',
       payload: uint8ArrayToBase64(localStateVector),
+      sender: this.sessionId,
     });
 
     // 2. Check if we need the PDF file from this newly joined peer
@@ -155,9 +165,9 @@ export class DocSyncEngine {
     }
   }
 
-  private handlePeerLeave(peerId: string) {
+  private handlePeerLeave(transport: SyncTransport, peerId: string) {
     if (this.destroyed) return;
-    this.activePeers.delete(peerId);
+    this.activePeers.delete(`${transport.name}:${peerId}`);
     this.notifyPeers();
   }
 
@@ -170,6 +180,12 @@ export class DocSyncEngine {
     message: PeerMessage
   ) {
     if (this.destroyed || !message || !message.type) return;
+
+    const key = `${transport.name}:${peerId}`;
+    if (message.sender && this.activePeers.has(key) && this.activePeers.get(key) !== message.sender) {
+      this.activePeers.set(key, message.sender);
+      this.notifyPeers();
+    }
 
     switch (message.type) {
       case 'state-vector': {
@@ -238,7 +254,8 @@ export class DocSyncEngine {
       case 'pdf-chunk': {
         // Received a PDF chunk from peer
         const chunk = message.payload as ChunkMessage;
-        if (!chunk || chunk.documentId !== this.documentId) return;
+        if (!chunk || chunk.documentId !== this.documentId || this.pdfAcquired) return;
+        this.lastChunkAt = Date.now();
 
         if (!this.pdfReassembler) {
           this.pdfReassembler = new ChunkReassembler(this.documentId);
@@ -258,6 +275,8 @@ export class DocSyncEngine {
           try {
             const assembledBytes = await this.pdfReassembler.assembleAndVerify();
             const filename = chunk.filename || 'Document.pdf';
+            if (this.pdfAcquired) break; // another peer's copy finished first
+            this.pdfAcquired = true;
             await storeOriginalPDF(this.documentId, assembledBytes, filename);
             this.stopPdfPolling();
 
@@ -290,12 +309,19 @@ export class DocSyncEngine {
 
   private notifyPeers() {
     if (this.options.onPeersChange) {
-      this.options.onPeersChange(this.activePeers.size);
+      this.options.onPeersChange(this.getConnectedPeerCount());
     }
   }
 
+  /** Distinct remote tabs: identified sessions deduped, unidentified links counted as-is. */
   public getConnectedPeerCount(): number {
-    return this.activePeers.size;
+    const sessions = new Set<string>();
+    let unidentified = 0;
+    for (const session of this.activePeers.values()) {
+      if (session) sessions.add(session);
+      else unidentified++;
+    }
+    return sessions.size + unidentified;
   }
 
   public destroy() {
@@ -320,8 +346,25 @@ export class BroadcastChannelTransport implements SyncTransport {
   private peerJoinCbs: ((peerId: string) => void)[] = [];
   private peerLeaveCbs: ((peerId: string) => void)[] = [];
   private messageCbs: ((peerId: string, message: PeerMessage) => void)[] = [];
-  private peers: Set<string> = new Set();
+  private peers: Map<string, number> = new Map(); // peerId -> last seen
   private heartbeatInterval: any = null;
+  private static PEER_TIMEOUT_MS = 75000; // > Chrome hidden-tab timer throttle (1/min)
+
+  // Tabs that close or crash never run React cleanup, so peers must expire.
+  private seen(senderId: string) {
+    const isNew = !this.peers.has(senderId);
+    this.peers.set(senderId, Date.now());
+    if (isNew) this.peerJoinCbs.forEach((cb) => cb(senderId));
+    return isNew;
+  }
+
+  private dropPeer(peerId: string) {
+    if (this.peers.delete(peerId)) this.peerLeaveCbs.forEach((cb) => cb(peerId));
+  }
+
+  private handlePageHide = () => {
+    this.channel?.postMessage({ senderId: this.myPeerId, type: 'leave' });
+  };
 
   connect(roomId: string): void {
     this.channel = new BroadcastChannel(`editordoc_room_${roomId}`);
@@ -331,9 +374,7 @@ export class BroadcastChannelTransport implements SyncTransport {
       if (!senderId || senderId === this.myPeerId) return;
 
       if (type === 'announce') {
-        if (!this.peers.has(senderId)) {
-          this.peers.add(senderId);
-          this.peerJoinCbs.forEach((cb) => cb(senderId));
+        if (this.seen(senderId)) {
           // Reply with ack so they know about us
           this.channel?.postMessage({
             senderId: this.myPeerId,
@@ -342,21 +383,12 @@ export class BroadcastChannelTransport implements SyncTransport {
           });
         }
       } else if (type === 'announce-ack') {
-        if (targetId === this.myPeerId && !this.peers.has(senderId)) {
-          this.peers.add(senderId);
-          this.peerJoinCbs.forEach((cb) => cb(senderId));
-        }
+        if (targetId === this.myPeerId) this.seen(senderId);
       } else if (type === 'leave') {
-        if (this.peers.has(senderId)) {
-          this.peers.delete(senderId);
-          this.peerLeaveCbs.forEach((cb) => cb(senderId));
-        }
+        this.dropPeer(senderId);
       } else if (type === 'data') {
         if (!targetId || targetId === this.myPeerId) {
-          if (!this.peers.has(senderId)) {
-            this.peers.add(senderId);
-            this.peerJoinCbs.forEach((cb) => cb(senderId));
-          }
+          this.seen(senderId);
           this.messageCbs.forEach((cb) => cb(senderId, message));
         }
       }
@@ -368,17 +400,24 @@ export class BroadcastChannelTransport implements SyncTransport {
       type: 'announce',
     });
 
-    // Heartbeat to keep track of live peers
+    // Heartbeat to keep track of live peers; expire silent ones
     this.heartbeatInterval = setInterval(() => {
       this.channel?.postMessage({
         senderId: this.myPeerId,
         type: 'announce',
       });
+      const now = Date.now();
+      for (const [peerId, lastSeen] of this.peers) {
+        if (now - lastSeen > BroadcastChannelTransport.PEER_TIMEOUT_MS) this.dropPeer(peerId);
+      }
     }, 5000);
+
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', this.handlePageHide);
   }
 
   disconnect(): void {
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.handlePageHide);
     if (this.channel) {
       try {
         this.channel.postMessage({
@@ -422,6 +461,6 @@ export class BroadcastChannelTransport implements SyncTransport {
   }
 
   getPeers(): string[] {
-    return Array.from(this.peers);
+    return Array.from(this.peers.keys());
   }
 }

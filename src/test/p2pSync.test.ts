@@ -8,6 +8,8 @@ import {
   normalizeToUint8Array,
 } from '../lib/crdt/pdfStore';
 import { DocSyncEngine, SyncTransport, PeerMessage } from '../lib/crdt/docSync';
+import { exportSyncFile, importSyncFile } from '../lib/crdt/fileSync';
+import { addWhiteoutCRDT, readDocumentSnapshot } from '../lib/crdt/schema';
 
 /**
  * Mock transport simulating Trystero WebRTC behavior:
@@ -165,6 +167,60 @@ describe('P2P Document Sharing & Binary Chunking', () => {
     expect(peerBReceivedPdf!.byteLength).toBe(mockPdf.byteLength);
     expect(peerBReceivedFilename).toBe('Document.pdf');
 
+    engineA.destroy();
+    engineB.destroy();
+  });
+
+  it('forwards .cdsync imports to currently connected peers', async () => {
+    const documentId = 'a'.repeat(64);
+    const [docA, docB] = [new Y.Doc(), new Y.Doc()];
+    const tA = new SimulatedWebRtcTransport('peer-A');
+    const tB = new SimulatedWebRtcTransport('peer-B');
+    for (const t of [tA, tB]) {
+      t.peerNetwork.set('peer-A', tA);
+      t.peerNetwork.set('peer-B', tB);
+    }
+    const engines = [
+      new DocSyncEngine({ doc: docA, documentId, transports: [tA], getLocalPdfBytes: () => new Uint8Array([1]) }),
+      new DocSyncEngine({ doc: docB, documentId, transports: [tB], getLocalPdfBytes: () => new Uint8Array([1]) }),
+    ];
+
+    // Offline peer C's edits arrive at A via a sync file
+    const docC = new Y.Doc();
+    addWhiteoutCRDT(docC, { pageIndex: 0, x: 1, y: 1, width: 5, height: 5 });
+    const { blob } = exportSyncFile(docC, documentId);
+    await importSyncFile(blob, docA, documentId);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(readDocumentSnapshot(docB).whiteouts.length).toBe(1);
+    engines.forEach((e) => e.destroy());
+  });
+
+  it('counts a remote tab reached over two transports as one peer', async () => {
+    const documentId = 'b'.repeat(64);
+    const net = (idA: string, idB: string) => {
+      const ta = new SimulatedWebRtcTransport(idA);
+      const tb = new SimulatedWebRtcTransport(idB);
+      for (const t of [ta, tb]) {
+        t.peerNetwork.set(idA, ta);
+        t.peerNetwork.set(idB, tb);
+      }
+      return [ta, tb];
+    };
+    const [a1, b1] = net('A-bc', 'B-bc');
+    const [a2, b2] = net('A-rtc', 'B-rtc');
+    const pdf = () => new Uint8Array([1]);
+    const engineA = new DocSyncEngine({ doc: new Y.Doc(), documentId, transports: [a1, a2], getLocalPdfBytes: pdf });
+    const engineB = new DocSyncEngine({ doc: new Y.Doc(), documentId, transports: [b1, b2], getLocalPdfBytes: pdf });
+
+    a1.simulateJoin('B-bc');
+    b1.simulateJoin('A-bc');
+    a2.simulateJoin('B-rtc');
+    b2.simulateJoin('A-rtc');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(engineA.getConnectedPeerCount()).toBe(1);
+    expect(engineB.getConnectedPeerCount()).toBe(1);
     engineA.destroy();
     engineB.destroy();
   });
