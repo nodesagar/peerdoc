@@ -7,6 +7,31 @@ interface ConvertToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
 }
 
+/** pdf-lib embeds only PNG/JPEG; anything else the browser can decode is re-encoded to PNG. */
+function toEmbeddableDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const url = reader.result as string;
+      if (file.type === 'image/png' || file.type === 'image/jpeg') return resolve(url);
+      const img = new window.Image(); // `Image` is the lucide icon here
+      img.onerror = () => reject(new Error('unsupported image format'));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 1024; // SVGs without intrinsic size
+        canvas.height = img.naturalHeight || 1024;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('canvas unavailable'));
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = url;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed }) => {
   const [imageUrls, setImageUrls] = useState<{ id: string; url: string; name: string }[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -16,12 +41,9 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
     const valid = files.filter((f) => f.type.startsWith('image/'));
 
     valid.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const url = event.target?.result as string;
-        setImageUrls((prev) => [...prev, { id: crypto.randomUUID(), url, name: file.name }]);
-      };
-      reader.readAsDataURL(file);
+      toEmbeddableDataUrl(file)
+        .then((url) => setImageUrls((prev) => [...prev, { id: crypto.randomUUID(), url, name: file.name }]))
+        .catch((err) => alert(`Skipped ${file.name}: ${err.message || err}`));
     });
     e.target.value = '';
   };
