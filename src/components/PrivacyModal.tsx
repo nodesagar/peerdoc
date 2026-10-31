@@ -41,7 +41,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
               <span>Zero Central Servers: Pure Peer-to-Peer</span>
             </div>
             <p className="text-xs text-[#5f6368]">
-              There is no EditorDoc server. Collaboration happens directly between peer browsers via WebRTC DataChannels (Trystero) and local BroadcastChannels. When a network blocks direct WebRTC connections, peers fall back to public MQTT brokers as a relay; everything sent that way is end-to-end encrypted (AES-256-GCM) with a key derived from the room ID, which the brokers never see. Room IDs are the SHA-256 hash of your original PDF, so anyone with the share link can join.
+              There is no EditorDoc server. Collaboration happens directly between peer browsers via WebRTC DataChannels (Trystero) and local BroadcastChannels. So that peers can still connect when a network blocks WebRTC, edits are also relayed through public MQTT brokers (the PDF itself only when no direct connection is available); everything sent that way is end-to-end encrypted (AES-256-GCM) with a key derived from the room ID, which the brokers never see. Room IDs are the SHA-256 hash of your original PDF, so anyone with the share link can join.
             </p>
           </div>
 
