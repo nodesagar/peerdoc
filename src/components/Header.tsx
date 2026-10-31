@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ActiveTool, SyncStatus } from '../types';
 import { ShieldCheck, Menu, X } from 'lucide-react';
+import { pressable } from '../lib/pressable';
 import { CollaborationBar } from './CollaborationBar';
 
 interface HeaderProps {
@@ -51,11 +52,12 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left: Brand Logo + Nav Links */}
         <div className="flex items-center space-x-6">
           <div
-            onClick={() => {
+            {...pressable(() => {
               setActiveTool('dashboard');
               setIsMobileMenuOpen(false);
-            }}
-            className="flex items-center space-x-2.5 cursor-pointer group shrink-0"
+            })}
+            aria-label="EditorDoc home"
+            className="flex items-center space-x-2.5 cursor-pointer group shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]"
           >
             <div className="w-8 h-8 rounded-lg bg-[#005db2] flex items-center justify-center text-white shadow-sm transition-transform group-hover:scale-105">
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
