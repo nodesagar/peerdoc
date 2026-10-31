@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { joinRoom } from 'trystero/torrent';
-import { SyncTransport, PeerMessage, DocSyncEngine, BroadcastChannelTransport } from './docSync';
+import { SyncTransport, PeerMessage, DocSyncEngine, BroadcastChannelTransport, PdfTransferEvent } from './docSync';
 import { createRelayTransport } from './relayTransport';
 import { SyncStatus } from '../../types';
 
@@ -126,6 +126,7 @@ export async function createP2PProvider(
     onPeersChange?: (count: number) => void;
     onPdfAvailable?: (bytes: Uint8Array, filename?: string) => void;
     onPdfProgress?: (progress: number) => void;
+    onPdfTransferEvent?: (event: PdfTransferEvent) => void;
   }
 ): Promise<P2PProviderHandle> {
   const doc = existingDoc || new Y.Doc();
@@ -161,12 +162,16 @@ export async function createP2PProvider(
     doc,
     documentId,
     transports,
+    // Without this the engine only saw PDFs persisted to IndexedDB: a host whose
+    // storage write failed (private window, quota) could never serve the file.
+    getLocalPdfBytes: callbacks?.getLocalPdfBytes,
     onPeersChange: (count) => {
       callbacks?.onPeersChange?.(count);
       callbacks?.onStatusChange?.(count > 0 ? 'synced' : 'offline');
     },
     onPdfAvailable: callbacks?.onPdfAvailable,
     onPdfProgress: callbacks?.onPdfProgress,
+    onPdfTransferEvent: callbacks?.onPdfTransferEvent,
   });
 
   callbacks?.onStatusChange?.(engine.getConnectedPeerCount() > 0 ? 'synced' : 'offline');

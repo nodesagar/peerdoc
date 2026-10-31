@@ -11,7 +11,7 @@ import {
 } from './pdfStore';
 
 export interface PeerMessage {
-  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk';
+  type: 'state-vector' | 'state-update' | 'request-pdf' | 'pdf-chunk' | 'pdf-offer' | 'pdf-unavailable';
   payload: any;
   /** Sender's engine session ID; lets one remote tab reached over several transports count once. */
   sender?: string;
@@ -31,6 +31,16 @@ export interface SyncTransport {
   readonly relay?: boolean;
 }
 
+/** Human-visible progress of fetching (or serving) the original PDF. */
+export type PdfTransferEvent =
+  | { kind: 'requested'; routes: string[]; peers: number }
+  | { kind: 'offered'; peer: string; route: string; totalChunks: number; bytes: number }
+  | { kind: 'unavailable'; peer: string; route: string }
+  | { kind: 'verify-failed'; reason: string }
+  | { kind: 'received'; bytes: number }
+  | { kind: 'serving'; peer: string; route: string; totalChunks: number; bytes: number }
+  | { kind: 'served'; peer: string; route: string };
+
 export interface DocSyncOptions {
   doc: Y.Doc;
   documentId: string;
@@ -39,7 +49,11 @@ export interface DocSyncOptions {
   onPeersChange?: (peersCount: number) => void;
   onPdfAvailable?: (bytes: Uint8Array, filename?: string) => void;
   onPdfProgress?: (progress: number) => void;
+  onPdfTransferEvent?: (event: PdfTransferEvent) => void;
 }
+
+export const routeLabel = (t: SyncTransport) =>
+  t.relay ? 'encrypted relay' : t.name === 'BroadcastChannel' ? 'same browser' : 'direct WebRTC';
 
 /**
  * DocSyncEngine orchestrates CRDT state synchronization across transports.
@@ -61,6 +75,12 @@ export class DocSyncEngine {
   private pdfPollTimer: any = null;
   private pdfAcquired = false;
   private lastChunkAt = 0;
+  private lastRequestLog = { key: '', at: 0 };
+  private refusalLoggedAt = new Map<string, number>();
+  private refusedLinks = new Set<string>(); // links that answered 'pdf-unavailable'
+  private serving = new Set<string>(); // links we're currently streaming the PDF to
+  private relaySendChain: Promise<unknown> = Promise.resolve(); // one relay upload at a time
+  private static RELAY_CHUNK_GAP_MS = 120; // public brokers silently drop faster bursts
 
   constructor(options: DocSyncOptions) {
     this.doc = options.doc;
@@ -99,17 +119,26 @@ export class DocSyncEngine {
         this.stopPdfPolling();
         return;
       }
-      const inDb = await hasOriginalPDF(this.documentId);
-      if (inDb) {
+      if (await hasOriginalPDF(this.documentId)) {
+        // Another tab of this browser fetched and stored it: load it, don't just stop
         this.stopPdfPolling();
+        const entry = await getOriginalPDF(this.documentId);
+        if (entry && !this.pdfAcquired && !this.destroyed) {
+          this.pdfAcquired = true;
+          this.emit({ kind: 'received', bytes: entry.bytes.byteLength });
+          this.options.onPdfAvailable?.(entry.bytes, entry.filename);
+        }
         return;
       }
       // If we have connected peers and still lack PDF, request again
-      // (but not while a transfer is actively streaming in - that restarts it)
+      // (but not while a transfer is actively streaming in - that restarts it).
+      // After the grace period ask the relay too, even with direct links: those
+      // peers (e.g. another tab of this browser) may not have the PDF either.
       if (this.activePeers.size > 0 && Date.now() - this.lastChunkAt > 5000) {
         const relayDue =
-          this.firstRelayLinkAt > 0 && Date.now() - this.firstRelayLinkAt > DocSyncEngine.RELAY_GRACE_MS;
-        this.requestPDFFromPeers(relayDue && this.directLinkCount() === 0);
+          this.firstRelayLinkAt > 0 &&
+          (Date.now() - this.firstRelayLinkAt > DocSyncEngine.RELAY_GRACE_MS || this.allDirectLinksRefused());
+        this.requestPDFFromPeers(relayDue);
       }
     }, 2500);
   }
@@ -245,21 +274,78 @@ export class DocSyncEngine {
           }
         }
 
-        if (bytes && bytes.byteLength > 0) {
-          const chunks = chunkPDF(this.documentId, bytes, filename);
-          for (let i = 0; i < chunks.length; i++) {
-            if (this.destroyed) break;
-            transport.sendToPeer(peerId, {
-              type: 'pdf-chunk',
-              payload: chunks[i],
-            });
-            // Pacing: avoid flooding the DataChannel / tripping public broker rate limits
-            if (transport.relay) {
-              await new Promise((r) => setTimeout(r, 40));
-            } else if (chunks.length > 2 && i % 4 === 0) {
-              await new Promise((r) => setTimeout(r, 6));
+        const peer = this.peerLabel(transport, peerId);
+        const route = routeLabel(transport);
+        if (!bytes || bytes.byteLength === 0) {
+          // Tell the requester right away instead of leaving it waiting
+          transport.sendToPeer(peerId, { type: 'pdf-unavailable', payload: {}, sender: this.sessionId });
+          break;
+        }
+        const linkKey = `${transport.name}:${peerId}`;
+        if (this.serving.has(linkKey)) break; // stream in progress; they'll ask for gaps after
+        const chunks = chunkPDF(this.documentId, bytes, filename);
+        // Re-requests list only the chunks that went missing
+        const requested: unknown = message.payload?.missing;
+        const indices =
+          Array.isArray(requested) && requested.length > 0
+            ? requested.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < chunks.length)
+            : chunks.map((_, i) => i);
+
+        this.serving.add(linkKey); // at queue time, so re-requests don't queue duplicates
+        const stream = async () => {
+          transport.sendToPeer(peerId, {
+            type: 'pdf-offer',
+            payload: { totalChunks: chunks.length, sending: indices.length, bytes: bytes!.byteLength, filename },
+            sender: this.sessionId,
+          });
+          this.emit({ kind: 'serving', peer, route, totalChunks: indices.length, bytes: bytes!.byteLength });
+          try {
+            for (let n = 0; n < indices.length; n++) {
+              if (this.destroyed) break;
+              transport.sendToPeer(peerId, { type: 'pdf-chunk', payload: chunks[indices[n]] });
+              // Pacing: avoid flooding the DataChannel / tripping public broker rate limits
+              if (transport.relay) {
+                await new Promise((r) => setTimeout(r, DocSyncEngine.RELAY_CHUNK_GAP_MS));
+              } else if (indices.length > 2 && n % 4 === 0) {
+                await new Promise((r) => setTimeout(r, 6));
+              }
             }
+          } finally {
+            this.serving.delete(linkKey);
+            this.emit({ kind: 'served', peer, route });
           }
+        };
+        if (transport.relay) {
+          this.relaySendChain = this.relaySendChain.then(stream, stream);
+          await this.relaySendChain;
+        } else {
+          await stream();
+        }
+        break;
+      }
+
+      case 'pdf-offer': {
+        if (this.pdfAcquired) break;
+        const { totalChunks = 0, sending = totalChunks, bytes = 0 } = message.payload || {};
+        this.lastChunkAt = Date.now(); // transfer accepted: don't re-request while it starts
+        this.emit({
+          kind: 'offered',
+          peer: this.peerLabel(transport, peerId),
+          route: routeLabel(transport),
+          totalChunks: sending,
+          bytes,
+        });
+        break;
+      }
+
+      case 'pdf-unavailable': {
+        if (this.pdfAcquired) break;
+        this.refusedLinks.add(key);
+        const peer = this.peerLabel(transport, peerId);
+        // Every poll re-asks; report each refusing peer at most every 30s
+        if (Date.now() - (this.refusalLoggedAt.get(peer) ?? 0) > 30000) {
+          this.refusalLoggedAt.set(peer, Date.now());
+          this.emit({ kind: 'unavailable', peer, route: routeLabel(transport) });
         }
         break;
       }
@@ -293,11 +379,14 @@ export class DocSyncEngine {
             await storeOriginalPDF(this.documentId, assembledBytes, filename);
             this.stopPdfPolling();
 
+            this.emit({ kind: 'received', bytes: assembledBytes.byteLength });
             if (this.options.onPdfAvailable) {
               this.options.onPdfAvailable(assembledBytes, filename);
             }
           } catch (err) {
             console.error('Failed to assemble and verify PDF chunks:', err);
+            this.lastChunkAt = 0; // re-request on next poll
+            this.emit({ kind: 'verify-failed', reason: err instanceof Error ? err.message : String(err) });
           }
           this.pdfReassembler = null;
         }
@@ -309,26 +398,53 @@ export class DocSyncEngine {
   /**
    * Request original PDF bytes from connected peers
    */
-  public requestPDFFromPeers(viaRelay = this.directLinkCount() === 0) {
+  public requestPDFFromPeers(viaRelay = this.directLinkCount() === 0, alwaysLog = false) {
     if (this.destroyed) return;
+    const missing = this.pdfReassembler?.missingIndices() ?? [];
     const msg: PeerMessage = {
       type: 'request-pdf',
-      payload: { documentId: this.documentId },
+      payload: { documentId: this.documentId, ...(missing.length ? { missing } : {}) },
     };
-    for (const t of this.transports) {
-      if (!t.relay || viaRelay) t.broadcast(msg);
+    const used = this.transports.filter((t) => !t.relay || viaRelay);
+    used.forEach((t) => t.broadcast(msg));
+
+    // Log only when the route set changes or every 15s, not on every poll tick
+    const routes = [...new Set(used.filter((t) => this.linkCount(t) > 0).map(routeLabel))];
+    const key = routes.join('|');
+    if (routes.length && (alwaysLog || key !== this.lastRequestLog.key || Date.now() - this.lastRequestLog.at > 15000)) {
+      this.lastRequestLog = { key, at: Date.now() };
+      this.emit({ kind: 'requested', routes, peers: this.getConnectedPeerCount() });
     }
+  }
+
+  private emit(event: PdfTransferEvent) {
+    this.options.onPdfTransferEvent?.(event);
+  }
+
+  private linkCount(t: SyncTransport): number {
+    let n = 0;
+    for (const key of this.activePeers.keys()) if (key.startsWith(`${t.name}:`)) n++;
+    return n;
+  }
+
+  /** Short, stable label for a remote tab (its session ID when known). */
+  private peerLabel(t: SyncTransport, peerId: string): string {
+    return (this.activePeers.get(`${t.name}:${peerId}`) || peerId).slice(0, 6);
+  }
+
+  /** Every direct link answered "no PDF here": no point waiting before using the relay. */
+  private allDirectLinksRefused(): boolean {
+    const direct = [...this.activePeers.keys()].filter((k) =>
+      this.transports.some((t) => !t.relay && k.startsWith(`${t.name}:`))
+    );
+    return direct.length > 0 && direct.every((k) => this.refusedLinks.has(k));
   }
 
   /** Links over non-relay transports (BroadcastChannel, WebRTC). */
   private directLinkCount(): number {
-    let n = 0;
-    for (const t of this.transports) {
-      if (t.relay) continue;
-      for (const key of this.activePeers.keys()) if (key.startsWith(`${t.name}:`)) n++;
-    }
-    return n;
+    return this.transports.filter((t) => !t.relay).reduce((n, t) => n + this.linkCount(t), 0);
   }
+
 
   private notifyPeers() {
     if (this.options.onPeersChange) {
@@ -360,10 +476,11 @@ export class DocSyncEngine {
 
 /** A dumb broadcast medium: every subscriber of the room receives every posted message. */
 export interface PubSubBus {
-  post(msg: any): void;
+  /** `targetId` lets a bus deliver only to that peer (e.g. its own inbox topic). */
+  post(msg: any, targetId?: string): void;
   close(): void;
 }
-export type PubSubBusFactory = (roomId: string, onMessage: (msg: any) => void) => PubSubBus;
+export type PubSubBusFactory = (roomId: string, onMessage: (msg: any) => void, selfId: string) => PubSubBus;
 
 /**
  * Peer presence + addressed messaging on top of any broadcast bus
@@ -398,7 +515,7 @@ export class PubSubTransport implements SyncTransport {
   }
 
   private post(msg: Record<string, any>) {
-    this.bus?.post({ senderId: this.myPeerId, ...msg });
+    this.bus?.post({ senderId: this.myPeerId, ...msg }, msg.targetId);
   }
 
   private handlePageHide = () => this.post({ type: 'leave' });
@@ -421,7 +538,7 @@ export class PubSubTransport implements SyncTransport {
           this.messageCbs.forEach((cb) => cb(senderId, message));
         }
       }
-    });
+    }, this.myPeerId);
 
     this.post({ type: 'announce' });
 

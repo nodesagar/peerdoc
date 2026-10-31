@@ -199,6 +199,14 @@ export class ChunkReassembler {
     return { isComplete, progress };
   }
 
+  /** Chunk indices still missing (empty until the total is known). */
+  public missingIndices(): number[] {
+    if (!this.totalChunks) return [];
+    const missing: number[] = [];
+    for (let i = 0; i < this.totalChunks; i++) if (!this.chunks.has(i)) missing.push(i);
+    return missing;
+  }
+
   public async assembleAndVerify(): Promise<Uint8Array> {
     if (!this.totalChunks || this.chunks.size !== this.totalChunks) {
       throw new Error(`Incomplete chunks: received ${this.chunks.size}/${this.totalChunks}`);

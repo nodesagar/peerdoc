@@ -45,17 +45,22 @@ export async function openMessage(key: CryptoKey, data: Uint8Array): Promise<any
   return JSON.parse(dec.decode(pt));
 }
 
-const openMqttBus: PubSubBusFactory = (roomId, onMessage): PubSubBus => {
+const openMqttBus: PubSubBusFactory = (roomId, onMessage, selfId): PubSubBus => {
   const channel = deriveRelayChannel(roomId);
   const clients = RELAY_BROKERS.map((url) =>
-    mqtt.connect(url, { reconnectPeriod: 5000, connectTimeout: 10000, clean: true })
+    // queueQoSZero off: an unreachable broker would otherwise buffer every message forever
+    mqtt.connect(url, { reconnectPeriod: 5000, connectTimeout: 10000, clean: true, queueQoSZero: false })
   );
   // Every message is published to all brokers for redundancy; deliver each once.
   const seen = new Set<string>();
   let sendChain: Promise<unknown> = Promise.resolve(); // keep publish order
 
   clients.forEach((client) => {
-    client.on('connect', () => channel.then(({ topic }) => client.subscribe(topic, { qos: 0 })));
+    // Room topic for broadcasts + a personal inbox, so a PDF streamed to one peer
+    // isn't also pushed through every other peer's connection
+    client.on('connect', () =>
+      channel.then(({ topic }) => client.subscribe([topic, `${topic}/${selfId}`], { qos: 0 }))
+    );
     client.on('error', (err) => console.warn('Relay broker error:', err.message));
     client.on('message', async (_topic, payload) => {
       try {
@@ -71,12 +76,13 @@ const openMqttBus: PubSubBusFactory = (roomId, onMessage): PubSubBus => {
   });
 
   return {
-    post(msg) {
+    post(msg, targetId) {
       sendChain = sendChain
         .then(async () => {
-          const { topic, key } = await channel;
+          const { topic: room, key } = await channel;
+          const topic = targetId ? `${room}/${targetId}` : room;
           const sealed = await sealMessage(key, { id: crypto.randomUUID(), msg });
-          // mqtt.js queues while (re)connecting
+          // Brokers that are down drop it; the other broker and retries cover that
           clients.forEach((c) => c.publish(topic, sealed as any, { qos: 0 }));
         })
         .catch((err) => console.warn('Relay publish failed:', err));
