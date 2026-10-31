@@ -31,6 +31,30 @@ export interface Attribution {
   createdAt?: number;
 }
 
+export type AnnotationType = 'highlight' | 'box' | 'ink' | 'note';
+
+/** Review markup. Geometry in page percent; notes are points (width/height 0). */
+export interface Annotation extends Attribution {
+  id: string;
+  type: AnnotationType;
+  pageIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  /** Ink only: flat [x0, y0, x1, y1, ...] in page percent. */
+  points?: number[];
+  resolved?: boolean;
+}
+
+/** One message in an annotation's thread. */
+export interface ThreadComment extends Attribution {
+  id: string;
+  annotationId: string;
+  text: string;
+}
+
 export interface RedactionBox extends Attribution {
   id: string;
   pageIndex: number;

@@ -1,4 +1,4 @@
-import { PDFDocument, PDFPage, PDFDict, PDFArray, PDFName, PDFNumber, PDFRawStream, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { PDFDocument, PDFPage, PDFDict, PDFArray, PDFName, PDFNumber, PDFRawStream, PDFHexString, BlendMode, LineCapStyle, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { PDFDocument as PDFDocumentPlus } from 'pdf-lib-plus-encrypt';
 import { PDFMetadataInfo, RedactionBox, WhiteoutBox, TextOverlay, SignatureBox, PageMetadata } from '../types';
 import { DocumentSnapshot } from '../lib/crdt/schema';
@@ -429,7 +429,54 @@ export async function buildConvergedPDF(
     }
   }
 
+  // 6. Review annotations: markup is drawn into the page (visible in every viewer);
+  // each open comment thread also becomes a real PDF sticky note.
+  for (const a of snapshot.annotations) {
+    const targetIdx = activePages.findIndex((p) => p.originalIndex === a.pageIndex);
+    if (targetIdx < 0 || targetIdx >= finalPages.length) continue;
+    const page = finalPages[targetIdx];
+    const frame = frameOf(targetIdx);
+    const color = hexToRgb(a.color);
+
+    if (a.type === 'highlight') {
+      page.drawRectangle({ ...frame.rect(a), color, opacity: 0.35, blendMode: BlendMode.Multiply });
+    } else if (a.type === 'box') {
+      page.drawRectangle({ ...frame.rect(a), borderColor: color, borderWidth: 2 });
+    } else if (a.type === 'ink' && a.points && a.points.length >= 4) {
+      const pts = a.points;
+      const at = (i: number) => {
+        const [x, y] = frame.toPdf((pts[i] / 100) * frame.width, (pts[i + 1] / 100) * frame.height);
+        return { x, y };
+      };
+      for (let i = 0; i + 3 < pts.length; i += 2) {
+        page.drawLine({ start: at(i), end: at(i + 2), thickness: 2, color, lineCap: LineCapStyle.Round });
+      }
+    }
+
+    const thread = snapshot.comments.filter((c) => c.annotationId === a.id);
+    if (!a.resolved && thread.length > 0) {
+      const [x, y] = frame.toPdf((a.x / 100) * frame.width, (a.y / 100) * frame.height);
+      const note = newDoc.context.obj({
+        Type: 'Annot',
+        Subtype: 'Text',
+        Rect: [x, y - 20, x + 20, y],
+        Contents: PDFHexString.fromText(thread.map((c) => `${c.createdBy ?? 'Someone'}: ${c.text}`).join('\n\n')),
+        T: PDFHexString.fromText(thread[0].createdBy ?? 'EditorDoc'),
+        Name: 'Comment',
+        C: [color.red, color.green, color.blue],
+        F: 4, // print
+        Open: false,
+      });
+      page.node.addAnnot(newDoc.context.register(note));
+    }
+  }
+
   return await newDoc.save();
+}
+
+function hexToRgb(hex: string | undefined) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex ?? '');
+  return m ? rgb(parseInt(m[1], 16) / 255, parseInt(m[2], 16) / 255, parseInt(m[3], 16) / 255) : rgb(0.98, 0.67, 0);
 }
 
 /**
@@ -447,6 +494,8 @@ export async function editPDF(
     whiteouts,
     redactions: [],
     signatures: [],
+    annotations: [],
+    comments: [],
   };
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   dummySnapshot.pages = pdfDoc.getPageIndices().map((idx) => ({
@@ -474,6 +523,8 @@ export async function redactPDF(
     whiteouts: [],
     redactions,
     signatures: [],
+    annotations: [],
+    comments: [],
   };
   const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
   dummySnapshot.pages = pdfDoc.getPageIndices().map((idx) => ({

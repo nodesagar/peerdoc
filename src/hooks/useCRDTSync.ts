@@ -13,6 +13,13 @@ import {
   getWhiteoutsMap,
   getRedactionsMap,
   getSignaturesMap,
+  getAnnotationsMap,
+  getCommentsMap,
+  addAnnotationCRDT,
+  updateAnnotationCRDT,
+  removeAnnotationCRDT,
+  addCommentCRDT,
+  removeCommentCRDT,
   addTextOverlayCRDT,
   updateTextOverlayCRDT,
   removeTextOverlayCRDT,
@@ -34,7 +41,7 @@ import { PdfTransferEvent } from '../lib/crdt/docSync';
 export type TransferLogEntry = PdfTransferEvent & { at: number };
 import { exportSyncFile, importSyncFile, downloadSyncFile } from '../lib/crdt/fileSync';
 import { getOriginalPDF, storeOriginalPDF } from '../lib/crdt/pdfStore';
-import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata } from '../types';
+import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata, Annotation } from '../types';
 
 export interface UseCRDTSyncOptions {
   documentId: string | null;
@@ -52,6 +59,8 @@ const EMPTY_SNAPSHOT: DocumentSnapshot = {
   whiteouts: [],
   redactions: [],
   signatures: [],
+  annotations: [],
+  comments: [],
 };
 
 export function useCRDTSync(options: UseCRDTSyncOptions) {
@@ -143,6 +152,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const whiteoutsMap = getWhiteoutsMap(ydoc);
     const redactionsMap = getRedactionsMap(ydoc);
     const signaturesMap = getSignaturesMap(ydoc);
+    const annotationsMap = getAnnotationsMap(ydoc);
+    const commentsMap = getCommentsMap(ydoc);
 
     // Presence travels with the sync engine; it is created per room and never persisted.
     const roomAwareness = new Awareness(ydoc);
@@ -169,6 +180,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     whiteoutsMap.observeDeep(handleDeepChange);
     redactionsMap.observeDeep(handleDeepChange);
     signaturesMap.observeDeep(handleDeepChange);
+    annotationsMap.observeDeep(handleDeepChange);
+    commentsMap.observeDeep(handleDeepChange);
 
     // Load or initialize
     (async () => {
@@ -257,6 +270,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       whiteoutsMap.unobserveDeep(handleDeepChange);
       redactionsMap.unobserveDeep(handleDeepChange);
       signaturesMap.unobserveDeep(handleDeepChange);
+      annotationsMap.unobserveDeep(handleDeepChange);
+      commentsMap.unobserveDeep(handleDeepChange);
 
       undoManager.destroy();
       if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
@@ -372,6 +387,31 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     removeSignatureCRDT(docRef.current, id);
   }, []);
 
+  const addAnnotation = useCallback((a: Omit<Annotation, 'id'> & { id?: string }) => {
+    if (!docRef.current) return '';
+    return addAnnotationCRDT(docRef.current, { ...attribution(), ...a });
+  }, []);
+
+  const updateAnnotation = useCallback(
+    (id: string, patch: Parameters<typeof updateAnnotationCRDT>[2]) => {
+      if (docRef.current) updateAnnotationCRDT(docRef.current, id, patch);
+    },
+    []
+  );
+
+  const removeAnnotation = useCallback((id: string) => {
+    if (docRef.current) removeAnnotationCRDT(docRef.current, id);
+  }, []);
+
+  const addComment = useCallback((annotationId: string, text: string) => {
+    if (!docRef.current || !text.trim()) return '';
+    return addCommentCRDT(docRef.current, { ...attribution(), annotationId, text: text.trim() });
+  }, []);
+
+  const removeComment = useCallback((id: string) => {
+    if (docRef.current) removeCommentCRDT(docRef.current, id);
+  }, []);
+
   const movePage = useCallback(
     (pageId: string, prevOrder: string | null, nextOrder: string | null) => {
       if (!docRef.current) return;
@@ -431,6 +471,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     whiteouts: snapshot.whiteouts,
     redactions: snapshot.redactions,
     signatures: snapshot.signatures,
+    annotations: snapshot.annotations,
+    comments: snapshot.comments,
     meta: snapshot.meta,
     syncStatus,
     peerCount,
@@ -452,6 +494,11 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     addSignature,
     updateSignature,
     removeSignature,
+    addAnnotation,
+    updateAnnotation,
+    removeAnnotation,
+    addComment,
+    removeComment,
     movePage,
     rotatePage,
     deletePage,
