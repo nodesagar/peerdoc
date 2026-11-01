@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { get, set, del } from 'idb-keyval';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ActiveTool, ProcessedDoc } from './types';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -25,11 +24,18 @@ import { createDocxFiles } from './lib/word/templates';
 import { zipSync } from 'fflate';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
+import { buildConvergedPDF, downloadUint8ArrayAsFile, formatBytes } from './utils/pdfProcessor';
 import { parseShareInput } from './lib/crdt/roomKey';
 import { createOwnedRoom, getIdentity, loadRoom, saveRoom } from './lib/crdt/access';
 import { useRoomAccess } from './hooks/useRoomAccess';
 import { AccessCard } from './components/AccessCard';
 import { PDFDocument } from 'pdf-lib';
+import {
+  loadRecentDocs,
+  saveRecentDocs,
+  upsertRecentDocList,
+  summarizeSnapshotWork,
+} from './lib/recentDocs';
 
 async function countPages(bytes: Uint8Array): Promise<number> {
   try {
@@ -84,10 +90,26 @@ export default function App() {
   });
   const isWordDoc = isWordFormat(docFormat) || crdt.meta.format === 'word';
 
-  // Load recent docs history from IndexedDB on startup
+  const handleDocumentProcessed = useCallback((newDoc: ProcessedDoc) => {
+    setRecentDocs((prev) => {
+      const updated = upsertRecentDocList(prev, newDoc);
+      saveRecentDocs(updated).catch(console.error);
+      return updated;
+    });
+  }, []);
+
+  // Load recent docs history from browser storage on startup
   useEffect(() => {
-    get<ProcessedDoc[]>('editordoc_recent_docs').then((val) => {
-      if (val) setRecentDocs(val);
+    loadRecentDocs().then((loaded) => {
+      setRecentDocs((prev) => {
+        if (prev.length === 0) return loaded;
+        let merged = [...loaded];
+        for (const doc of prev) {
+          merged = upsertRecentDocList(merged, doc);
+        }
+        saveRecentDocs(merged).catch(console.error);
+        return merged;
+      });
     });
 
     // Invite (?doc=<sha256>#i=<token>&o=<owner>) or reopening a document (?doc=<sha256>)
@@ -101,6 +123,71 @@ export default function App() {
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  // Keep fileName and format in sync when a joined room receives metadata or bytes from peers
+  useEffect(() => {
+    if (crdt.meta.title && crdt.meta.title !== 'Untitled Document' && fileName === 'Document.pdf') {
+      setFileName(crdt.meta.title);
+    }
+  }, [crdt.meta.title, fileName]);
+
+  useEffect(() => {
+    if (crdt.rawPdfBytes && !docFormat) {
+      const detected = detectFormat(crdt.rawPdfBytes);
+      if (detected) setDocFormat(detected);
+    }
+  }, [crdt.rawPdfBytes, docFormat]);
+
+  // Automatically record & update the active document in Recent Documents whenever it is worked on or modified
+  useEffect(() => {
+    if (!documentId || !crdt.isLoaded) return;
+
+    const effectiveName =
+      crdt.meta.title && crdt.meta.title !== 'Untitled Document' && fileName === 'Document.pdf'
+        ? crdt.meta.title
+        : fileName;
+    const format: DocFormat = docFormat ?? (isWordDoc ? 'docx' : 'pdf');
+    const summary = summarizeSnapshotWork(crdt.snapshot, {
+      isWordDoc,
+      activeTool,
+      wordModified: crdt.lastModifiedAt !== null,
+      pageCount: seed?.format === 'pdf' ? seed.pageCount : undefined,
+    });
+    const size = crdt.rawPdfBytes ? formatBytes(crdt.rawPdfBytes.byteLength) : '—';
+    const currentTool: ActiveTool = DOC_TOOLS.includes(activeTool) ? activeTool : 'edit';
+
+    setRecentDocs((prev) => {
+      const existing = prev.find((d) => d.documentId === documentId || d.id === documentId);
+      const timestamp = crdt.lastModifiedAt ?? existing?.timestamp ?? Date.now();
+      const updated = upsertRecentDocList(prev, {
+        id: documentId,
+        documentId,
+        name: effectiveName,
+        action: summary.action,
+        size,
+        timestamp,
+        timeAgo: 'Just now',
+        format,
+        pageCount: summary.pageCount,
+        tool: DOC_TOOLS.includes(activeTool) ? activeTool : existing?.tool ?? currentTool,
+        details: summary.details,
+      });
+      saveRecentDocs(updated).catch(console.error);
+      return updated;
+    });
+  }, [
+    documentId,
+    crdt.isLoaded,
+    crdt.lastModifiedAt,
+    crdt.snapshot,
+    crdt.rawPdfBytes,
+    crdt.meta.title,
+    fileName,
+    docFormat,
+    isWordDoc,
+    activeTool,
+    seed,
+  ]);
 
   // Let collaborators see which tool we have open
   const { setPresence, awareness } = crdt;
@@ -127,20 +214,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [undo, redo]);
 
-  const handleDocumentProcessed = (newDoc: ProcessedDoc) => {
-    setRecentDocs((prev) => {
-      const updated = [newDoc, ...prev.filter((d) => d.id !== newDoc.id)];
-      const trimmed = updated.slice(0, 20);
-      set('editordoc_recent_docs', trimmed).catch(console.error);
-      return trimmed;
-    });
-  };
-
-  const handleClearHistory = () => {
-    setRecentDocs([]);
-    del('editordoc_recent_docs').catch(console.error);
-  };
-
   // Only the document ID: an invite token is used up, never left in the address bar
   const updateUrlDocParam = (docId: string) => {
     const url = new URL(window.location.href);
@@ -149,7 +222,7 @@ export default function App() {
     window.history.replaceState(null, '', url.toString());
   };
 
-  const handleSelectRecentDoc = (doc: ProcessedDoc) => {
+  const handleSelectRecentDoc = async (doc: ProcessedDoc) => {
     if (doc.blob) {
       const url = URL.createObjectURL(doc.blob);
       const a = document.createElement('a');
@@ -157,8 +230,46 @@ export default function App() {
       a.download = doc.name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } else if (doc.documentId) {
-      handleJoinRoomId(doc.documentId);
+      return;
+    }
+
+    if (doc.documentId) {
+      try {
+        if (doc.documentId === documentId && crdt.rawPdfBytes && !isWordDoc) {
+          const converged = await buildConvergedPDF(crdt.rawPdfBytes, crdt.snapshot);
+          downloadUint8ArrayAsFile(converged, doc.name);
+          return;
+        }
+        const stored = await getOriginalPDF(doc.documentId);
+        if (stored?.bytes) {
+          const mime = isWordFormat(doc.format ?? detectFormat(stored.bytes))
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/pdf';
+          const blob = new Blob([stored.bytes as BlobPart], { type: mime });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = doc.name || stored.filename;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to download recent document:', err);
+      }
+      handleJoinRoomId(doc.documentId, doc.tool);
+    }
+  };
+
+  const handleOpenRecentDoc = async (doc: ProcessedDoc) => {
+    if (doc.documentId) {
+      await handleJoinRoomId(doc.documentId, doc.tool);
+    } else if (doc.blob) {
+      const buf = await doc.blob.arrayBuffer();
+      const targetTool = doc.tool && DOC_TOOLS.includes(doc.tool) ? doc.tool : 'edit';
+      await openDocument(new Uint8Array(buf), doc.name, targetTool);
+    } else if (doc.tool) {
+      setActiveTool(doc.tool);
     }
   };
 
@@ -173,7 +284,7 @@ export default function App() {
 
   // All document state is set together after every await, so the CRDT hook never
   // sees a new room ID paired with the previous document's bytes or page count.
-  const openDocument = async (bytes: Uint8Array, name: string) => {
+  const openDocument = async (bytes: Uint8Array, name: string, targetTool: ActiveTool = 'edit') => {
     const format = detectFormat(bytes);
     if (!format) {
       alert(`"${name}" is not a PDF or Word document.`);
@@ -193,6 +304,24 @@ export default function App() {
     const room = await loadRoom(docId);
     if (!room || room.removed) await createOwnedRoom(docId, await getIdentity());
 
+    const pageCount = nextSeed.format === 'pdf' ? nextSeed.pageCount : undefined;
+    handleDocumentProcessed({
+      id: docId,
+      documentId: docId,
+      name,
+      action: 'Opened',
+      size: formatBytes(bytes.byteLength),
+      timestamp: Date.now(),
+      timeAgo: 'Just now',
+      format,
+      pageCount,
+      tool: targetTool,
+      details:
+        pageCount && pageCount > 0
+          ? `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`
+          : FORMAT_LABEL[format],
+    });
+
     setFileName(name);
     setRawPdfBytes(bytes.slice());
     setSeed(nextSeed);
@@ -200,7 +329,7 @@ export default function App() {
     setDocumentId(docId);
     setAccessRevision((n) => n + 1);
     updateUrlDocParam(docId);
-    setActiveTool('edit');
+    setActiveTool(targetTool);
   };
 
   const handleUploadNewDoc = async (file: File) => {
@@ -217,7 +346,7 @@ export default function App() {
     await openDocument(bytes, 'Untitled document.docx');
   };
 
-  const handleJoinRoomId = async (input: string) => {
+  const handleJoinRoomId = async (input: string, preferredTool?: ActiveTool) => {
     const parsed = parseShareInput(input);
     if (!parsed) {
       alert('Invalid link. Paste an invite link, or the 64-character document ID of a document you have opened before.');
@@ -255,6 +384,28 @@ export default function App() {
       }
     }
 
+    const nextTool: ActiveTool =
+      preferredTool && DOC_TOOLS.includes(preferredTool) ? preferredTool : 'edit';
+    const pageCount = nextSeed?.format === 'pdf' ? nextSeed.pageCount : undefined;
+    handleDocumentProcessed({
+      id: cleanId,
+      documentId: cleanId,
+      name: existing?.filename || 'Document.pdf',
+      action: 'Opened',
+      size: existing?.bytes ? formatBytes(existing.bytes.byteLength) : '—',
+      timestamp: Date.now(),
+      timeAgo: 'Just now',
+      format: format ?? undefined,
+      pageCount,
+      tool: nextTool,
+      details:
+        pageCount && pageCount > 0
+          ? `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`
+          : format
+          ? FORMAT_LABEL[format]
+          : undefined,
+    });
+
     setRawPdfBytes(existing?.bytes ?? null);
     setFileName(existing?.filename || 'Document.pdf');
     setSeed(nextSeed);
@@ -262,7 +413,7 @@ export default function App() {
     setDocumentId(cleanId);
     setAccessRevision((n) => n + 1);
     updateUrlDocParam(cleanId);
-    setActiveTool('edit');
+    setActiveTool(nextTool);
   };
 
   return (
@@ -297,8 +448,8 @@ export default function App() {
           <Dashboard
             setActiveTool={setActiveTool}
             recentDocs={recentDocs}
-            onClearHistory={handleClearHistory}
             onSelectRecentDoc={handleSelectRecentDoc}
+            onOpenRecentDoc={handleOpenRecentDoc}
             onLoadSample={handleLoadSample}
             onUploadNewDoc={handleUploadNewDoc}
             onJoinRoomId={handleJoinRoomId}

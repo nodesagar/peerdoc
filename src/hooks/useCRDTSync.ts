@@ -38,6 +38,7 @@ import {
   movePageCRDT,
   rotatePageCRDT,
   setPageDeletedCRDT,
+  SEED_ORIGIN,
 } from '../lib/crdt/schema';
 import { createP2PProvider, P2PProviderHandle } from '../lib/crdt/p2pProvider';
 import { PdfTransferEvent } from '../lib/crdt/docSync';
@@ -84,6 +85,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
   const [rawPdfBytes, setRawPdfBytes] = useState<Uint8Array | null>(initialPdfBytes || null);
   const [pdfProgress, setPdfProgress] = useState<number | null>(null);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
+  const [lastModifiedAt, setLastModifiedAt] = useState<number | null>(null);
   // Receiving side: what happened to our PDF request. Sending side: active uploads.
   const [transferLog, setTransferLog] = useState<TransferLogEntry[]>([]);
   const [servingCount, setServingCount] = useState<number>(0);
@@ -125,6 +127,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       docRef.current = null;
       setSnapshot(EMPTY_SNAPSHOT);
       setIsLoaded(false);
+      setLastModifiedAt(null);
       setSyncStatus('offline');
       setPeerCount(0);
       setRawPdfBytes(null);
@@ -135,6 +138,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
     const cleanDocId = documentId.trim().toLowerCase();
     let isCancelled = false;
+    let isReady = false;
     const ydoc = new Y.Doc();
     // Reset everything belonging to the previous document immediately, so tools
     // never render (or mutate) the old doc's state/bytes under the new room ID.
@@ -142,6 +146,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     docRef.current = ydoc;
     setSnapshot(EMPTY_SNAPSHOT);
     setIsLoaded(false);
+    setLastModifiedAt(null);
     setSyncStatus('connecting');
     setPeerCount(0);
     setPdfProgress(null);
@@ -185,6 +190,11 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     setCanUndo(false);
     setCanRedo(false);
 
+    const handleDocUpdate = (_update: Uint8Array, origin: any) => {
+      if (isCancelled || !isReady || origin === SEED_ORIGIN) return;
+      setLastModifiedAt(Date.now());
+    };
+
     metaMap.observeDeep(handleDeepChange);
     pagesMap.observeDeep(handleDeepChange);
     textOverlaysMap.observeDeep(handleDeepChange);
@@ -194,6 +204,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     annotationsMap.observeDeep(handleDeepChange);
     commentsMap.observeDeep(handleDeepChange);
     textEditsMap.observeDeep(handleDeepChange);
+    ydoc.on('update', handleDocUpdate);
 
     // Load or initialize
     (async () => {
@@ -268,6 +279,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
         }
 
         if (!isCancelled) {
+          isReady = true;
           setSnapshot(readDocumentSnapshot(ydoc));
           setIsLoaded(true);
         }
@@ -287,6 +299,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       annotationsMap.unobserveDeep(handleDeepChange);
       commentsMap.unobserveDeep(handleDeepChange);
       textEditsMap.unobserveDeep(handleDeepChange);
+      ydoc.off('update', handleDocUpdate);
 
       undoManager.destroy();
       if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
@@ -512,6 +525,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     transferLog,
     servingCount,
     isLoaded,
+    lastModifiedAt,
     requestPdfFromPeers,
     // Mutations
     addTextOverlay,

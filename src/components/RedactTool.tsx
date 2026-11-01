@@ -195,7 +195,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
       downloadUint8ArrayAsFile(redactedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: documentId || crypto.randomUUID(),
         name: outputName,
         action: 'Redacted',
         size: formatBytes(redactedBytes.byteLength),
@@ -203,6 +203,9 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         timeAgo: 'Just now',
         blob: new Blob([redactedBytes as any], { type: 'application/pdf' }),
         documentId: documentId || undefined,
+        format: 'pdf',
+        pageCount: numPages,
+        tool: 'redact',
       });
     } catch (err) {
       alert('Error applying redaction: ' + err);

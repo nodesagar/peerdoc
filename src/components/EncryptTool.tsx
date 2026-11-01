@@ -13,13 +13,29 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const sessionDocIdRef = React.useRef<string>(crypto.randomUUID());
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
+      const nextId = crypto.randomUUID();
+      sessionDocIdRef.current = nextId;
       setFileName(file.name);
       const buffer = await file.arrayBuffer();
-      setFileBuffer(new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
+      setFileBuffer(bytes);
+      onDocumentProcessed({
+        id: nextId,
+        name: file.name,
+        action: 'Opened',
+        size: formatBytes(file.size),
+        timestamp: Date.now(),
+        timeAgo: 'Just now',
+        blob: new Blob([bytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'encrypt',
+        details: 'Opened in Encrypt tool',
+      });
     }
   };
 
@@ -33,13 +49,16 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
       downloadUint8ArrayAsFile(encryptedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: sessionDocIdRef.current,
         name: outputName,
         action: 'Encrypted',
         size: formatBytes(encryptedBytes.byteLength),
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([encryptedBytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'encrypt',
+        details: 'Password protected PDF',
       });
     } catch (err) {
       alert('Error encrypting PDF: ' + err);

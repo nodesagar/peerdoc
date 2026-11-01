@@ -196,7 +196,7 @@ export const SignTool: React.FC<SignToolProps> = ({
       downloadUint8ArrayAsFile(signedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: documentId || crypto.randomUUID(),
         name: outputName,
         action: 'Signed',
         size: formatBytes(signedBytes.byteLength),
@@ -204,6 +204,9 @@ export const SignTool: React.FC<SignToolProps> = ({
         timeAgo: 'Just now',
         blob: new Blob([signedBytes as any], { type: 'application/pdf' }),
         documentId: documentId || undefined,
+        format: 'pdf',
+        pageCount: numPages,
+        tool: 'sign',
       });
     } catch (err) {
       alert('Error signing PDF: ' + err);

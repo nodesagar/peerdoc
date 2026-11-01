@@ -66,6 +66,10 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([pdfBytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        pageCount: imageUrls.length,
+        tool: 'convert',
+        details: `Converted ${imageUrls.length} ${imageUrls.length === 1 ? 'image' : 'images'}`,
       });
     } catch (err) {
       alert('Error converting images: ' + err);

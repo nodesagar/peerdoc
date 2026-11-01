@@ -14,6 +14,7 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
   const [numPages, setNumPages] = useState<number>(0);
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
   const [isSplitting, setIsSplitting] = useState(false);
+  const sessionDocIdRef = React.useRef<string>(crypto.randomUUID());
 
   const pdfBlobUrl = React.useMemo(() => {
     if (!fileBuffer) return null;
@@ -29,10 +30,25 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
+      const nextId = crypto.randomUUID();
+      sessionDocIdRef.current = nextId;
       setFileName(file.name);
       const buffer = await file.arrayBuffer();
-      setFileBuffer(new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
+      setFileBuffer(bytes);
       setSelectedPages([]);
+      onDocumentProcessed({
+        id: nextId,
+        name: file.name,
+        action: 'Opened',
+        size: formatBytes(file.size),
+        timestamp: Date.now(),
+        timeAgo: 'Just now',
+        blob: new Blob([bytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'split',
+        details: 'Opened in Split tool',
+      });
     }
   };
 
@@ -52,13 +68,17 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
       downloadUint8ArrayAsFile(extractedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: sessionDocIdRef.current,
         name: outputName,
         action: 'Split',
         size: formatBytes(extractedBytes.byteLength),
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([extractedBytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        pageCount: selectedPages.length,
+        tool: 'split',
+        details: `Extracted ${selectedPages.length} ${selectedPages.length === 1 ? 'page' : 'pages'}`,
       });
     } catch (err) {
       alert('Error splitting PDF: ' + err);
