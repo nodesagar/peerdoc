@@ -111,9 +111,13 @@ function readFormatting(view: EditorView, pkg: WordPackage): Formatting {
   const va = markActive(state, M.vertAlign)?.attrs.val;
   const sizeAttr = storedAttr('size');
   const fontAttr = storedAttr('font');
+  // An explicit bold/italic mark (on or off) decides; otherwise the style's computed look does.
+  // The caret's DOM node alone is unreliable: at a paragraph's end it is the <p>, not the run.
+  const boldMark = storedAttr('bold') ?? markActive(state, M.bold)?.attrs;
+  const italicMark = storedAttr('italic') ?? markActive(state, M.italic)?.attrs;
   return {
-    bold: storedAttr('bold') ? storedAttr('bold')!.on !== false : Number(cs?.fontWeight) >= 600,
-    italic: storedAttr('italic') ? storedAttr('italic')!.on !== false : cs?.fontStyle === 'italic',
+    bold: boldMark ? boldMark.on !== false : Number(cs?.fontWeight) >= 600,
+    italic: italicMark ? italicMark.on !== false : cs?.fontStyle === 'italic',
     underline: !!u && u.attrs.val !== 'none',
     strike: !!markActive(state, M.strike),
     sup: va === 'superscript',
@@ -125,6 +129,41 @@ function readFormatting(view: EditorView, pkg: WordPackage): Formatting {
     list: para?.attrs.numId && para.attrs.numId !== '0' ? para.attrs.numId : null,
     inTable: isInTable(state),
     link: markActive(state, M.link)?.attrs.href ?? null,
+  };
+}
+
+/** Removes character formatting (links stay) and any pending marks. */
+const clearFormattingCommand: Command = (state, dispatch) => {
+  const { from, to } = state.selection;
+  const tr = state.tr;
+  for (const m of Object.values(M)) if (m !== M.link) tr.removeMark(from, to, m);
+  tr.setStoredMarks([]);
+  dispatch?.(tr);
+  return true;
+};
+
+/**
+ * Keyboard shortcuts for the formatting toolbar (Mod = Ctrl, or Cmd on a Mac). Toggles read
+ * the same computed look as the toolbar, so Mod-B on text that is bold through its style
+ * (a heading) turns bold off instead of re-applying it.
+ */
+export function formatShortcuts(pkg: WordPackage, editLink: () => void): Record<string, (view: EditorView) => boolean> {
+  const apply = (view: EditorView, cmd: Command) => (cmd(view.state, view.dispatch, view), true);
+  const look = (view: EditorView) => readFormatting(view, pkg);
+  return {
+    'Mod-b': (v) => apply(v, setMark(M.bold, { on: !look(v).bold })),
+    'Mod-i': (v) => apply(v, setMark(M.italic, { on: !look(v).italic })),
+    'Mod-u': (v) => apply(v, setMark(M.underline, look(v).underline ? null : { val: 'single' })),
+    // Shift reports the capital letter, so letter bindings with Shift name it in upper case
+    'Mod-Shift-X': (v) => apply(v, setMark(M.strike, look(v).strike ? null : { double: false })),
+    'Mod-.': (v) => apply(v, setMark(M.vertAlign, look(v).sup ? null : { val: 'superscript' })),
+    'Mod-,': (v) => apply(v, setMark(M.vertAlign, look(v).sub ? null : { val: 'subscript' })),
+    'Mod-\\': (v) => apply(v, clearFormattingCommand),
+    'Mod-Shift-8': (v) => apply(v, toggleListCommand('app-bullet', pkg)),
+    'Mod-Shift-7': (v) => apply(v, toggleListCommand('app-decimal', pkg)),
+    'Mod-]': (v) => apply(v, indentCommand(1)),
+    'Mod-[': (v) => apply(v, indentCommand(-1)),
+    'Mod-k': () => (editLink(), true),
   };
 }
 
@@ -158,7 +197,12 @@ const ToolButton: React.FC<{ label: string; on?: boolean; disabled?: boolean; on
   </button>
 );
 
-const Popover: React.FC<{ label: string; button: React.ReactNode; children: (close: () => void) => React.ReactNode }> = ({ label, button, children }) => {
+const Popover: React.FC<{ label: string; button: React.ReactNode; active?: boolean; children: (close: () => void) => React.ReactNode }> = ({
+  label,
+  button,
+  active,
+  children,
+}) => {
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
@@ -169,7 +213,7 @@ const Popover: React.FC<{ label: string; button: React.ReactNode; children: (clo
         aria-expanded={open}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => setOpen((o) => !o)}
-        className={`${iconBtn(open)} w-auto px-1.5 gap-0.5`}
+        className={`${iconBtn(open || !!active)} w-auto px-1.5 gap-0.5`}
       >
         {button}
         <ChevronDown className="w-3 h-3 opacity-60" />
@@ -199,7 +243,7 @@ const TableGridPicker: React.FC<{ onPick: (rows: number, cols: number) => void }
             <button
               key={i}
               type="button"
-              aria-label={`${r} by ${c} table`}
+              aria-label={`Table with ${r} ${r === 1 ? 'row' : 'rows'} and ${c} ${c === 1 ? 'column' : 'columns'}`}
               onMouseEnter={() => setHover([r, c])}
               onFocus={() => setHover([r, c])}
               onClick={() => onPick(r, c)}
@@ -301,6 +345,8 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
     reader.readAsDataURL(file);
   };
   const insertImageRef = useRef(insertImageFile);
+  // Mod-K opens the link prompt; the editors are built once, so they reach it through a ref
+  const editLinkRef = useRef<() => void>(() => {});
   insertImageRef.current = insertImageFile;
 
   useEffect(() => {
@@ -329,6 +375,7 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
           setTick((t) => t + 1);
         },
         onImageFile: (v, f) => insertImageRef.current(v, f),
+        shortcuts: formatShortcuts(pkg, () => editLinkRef.current()),
       });
       views.push({ part, view });
     }
@@ -398,15 +445,8 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
     });
   };
 
-  const clearFormatting = () =>
-    run((state, dispatch) => {
-      const { from, to } = state.selection;
-      const tr = state.tr;
-      for (const m of Object.values(M)) if (m !== M.link) tr.removeMark(from, to, m);
-      tr.setStoredMarks([]);
-      dispatch?.(tr);
-      return true;
-    });
+  editLinkRef.current = editLink;
+  const clearFormatting = () => run(clearFormattingCommand);
 
   const buildWordExport = () => {
     if (!pkg || !doc) return null;
@@ -524,201 +564,203 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
       <div
         role="toolbar"
         aria-label="Formatting"
-        className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle px-2 py-1.5 flex flex-wrap items-center gap-x-1 gap-y-1.5 z-30"
+        className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle px-2 py-1.5 flex items-start gap-2 z-30"
       >
-        <select
-          aria-label="Paragraph style"
-          disabled={!ready}
-          value={fmt?.style ?? ''}
-          onChange={(e) => run(setParagraphAttrs({ style: e.target.value === pkg.styles.defaultParagraph ? null : e.target.value }))}
-          className={`${selectCls} w-32`}
-        >
-          {styleOptions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Font"
-          disabled={!ready}
-          value={fmt?.font ?? ''}
-          onChange={(e) => run(setMark(M.font, { family: e.target.value, xml: '' }))}
-          className={`${selectCls} w-32`}
-        >
-          {fontOptions.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Font size"
-          disabled={!ready}
-          value={fmt?.size ?? 11}
-          onChange={(e) => run(setMark(M.size, { halfPts: Math.round(Number(e.target.value) * 2) }))}
-          className={`${selectCls} w-[68px] tabular-nums`}
-        >
-          {sizeOptions.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <Divider />
+        {/* Tools wrap within their own column, so a narrow window adds rows of tools, never a
+            near-empty row holding just the file buttons */}
+        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-1 gap-y-1.5">
+          <select
+            aria-label="Paragraph style"
+            title="Paragraph style (Ctrl/Cmd+Alt+0 Normal, Ctrl/Cmd+Alt+1–3 Headings)"
+            disabled={!ready}
+            value={fmt?.style ?? ''}
+            onChange={(e) => run(setParagraphAttrs({ style: e.target.value === pkg.styles.defaultParagraph ? null : e.target.value }))}
+            className={`${selectCls} w-32`}
+          >
+            {styleOptions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Font"
+            disabled={!ready}
+            value={fmt?.font ?? ''}
+            onChange={(e) => run(setMark(M.font, { family: e.target.value, xml: '' }))}
+            title={fmt?.font}
+            className={`${selectCls} w-36`}
+          >
+            {fontOptions.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Font size"
+            disabled={!ready}
+            value={fmt?.size ?? 11}
+            onChange={(e) => run(setMark(M.size, { halfPts: Math.round(Number(e.target.value) * 2) }))}
+            className={`${selectCls} w-[68px] tabular-nums`}
+          >
+            {sizeOptions.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <Divider />
 
-        <ToolButton label="Bold (Ctrl+B)" on={fmt?.bold} disabled={!ready} onRun={() => toggleBold(!!fmt?.bold)}>
-          <Bold className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Italic (Ctrl+I)" on={fmt?.italic} disabled={!ready} onRun={() => toggleItalic(!!fmt?.italic)}>
-          <Italic className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Underline (Ctrl+U)" on={fmt?.underline} disabled={!ready} onRun={() => run(setMark(M.underline, fmt?.underline ? null : { val: 'single' }))}>
-          <Underline className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Strikethrough" on={fmt?.strike} disabled={!ready} onRun={() => run(setMark(M.strike, fmt?.strike ? null : { double: false }))}>
-          <Strikethrough className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Superscript" on={fmt?.sup} disabled={!ready} onRun={() => run(setMark(M.vertAlign, fmt?.sup ? null : { val: 'superscript' }))}>
-          <Superscript className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Subscript" on={fmt?.sub} disabled={!ready} onRun={() => run(setMark(M.vertAlign, fmt?.sub ? null : { val: 'subscript' }))}>
-          <Subscript className="w-4 h-4" />
-        </ToolButton>
-        <Popover label="Text colour" button={<Baseline className="w-4 h-4" />}>
-          {(close) => (
-            <div className="grid grid-cols-6 gap-1.5 w-max">
-              {TEXT_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  aria-label={`#${c}`}
-                  onClick={() => (run(setMark(M.color, { val: c, xml: '' })), close())}
-                  className="w-5 h-5 rounded-full ring-1 ring-ink/15 hover:ring-ink/50"
-                  style={{ backgroundColor: `#${c}` }}
-                />
-              ))}
-              <button type="button" onClick={() => (run(setMark(M.color, null)), close())} className="col-span-6 text-caption text-graphite hover:text-ink mt-1">
-                Automatic
-              </button>
-            </div>
-          )}
-        </Popover>
-        <Popover label="Highlight" button={<Highlighter className="w-4 h-4" />}>
-          {(close) => (
-            <div className="grid grid-cols-4 gap-1.5 w-max">
-              {HIGHLIGHTS.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  aria-label={h}
-                  onClick={() => (run(setMark(M.highlight, { val: h })), close())}
-                  className="w-5 h-5 rounded-md ring-1 ring-ink/15 hover:ring-ink/50"
-                  style={{ backgroundColor: HIGHLIGHT_CSS[h] }}
-                />
-              ))}
-              <button type="button" onClick={() => (run(setMark(M.highlight, null)), close())} className="col-span-4 text-caption text-graphite hover:text-ink mt-1">
-                No highlight
-              </button>
-            </div>
-          )}
-        </Popover>
-        <ToolButton label="Clear formatting" disabled={!ready} onRun={clearFormatting}>
-          <RemoveFormatting className="w-4 h-4" />
-        </ToolButton>
-        <Divider />
-
-        {(
-          [
-            ['left', 'Align left (Ctrl+L)', TextAlignStart, null],
-            ['center', 'Center (Ctrl+E)', TextAlignCenter, 'center'],
-            ['right', 'Align right (Ctrl+R)', TextAlignEnd, 'right'],
-            ['justify', 'Justify (Ctrl+J)', TextAlignJustify, 'justify'],
-          ] as const
-        ).map(([key, label, Icon, value]) => (
-          <ToolButton key={key} label={label} on={fmt?.align === key} disabled={!ready} onRun={() => run(setParagraphAttrs({ align: value }))}>
-            <Icon className="w-4 h-4" />
+          <ToolButton label="Bold (Ctrl/Cmd+B)" on={fmt?.bold} disabled={!ready} onRun={() => toggleBold(!!fmt?.bold)}>
+            <Bold className="w-4 h-4" />
           </ToolButton>
-        ))}
-        <ToolButton label="Bullets" on={fmt?.list === 'app-bullet'} disabled={!ready} onRun={() => run(toggleListCommand('app-bullet', pkg))}>
-          <List className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Numbering" on={fmt?.list === 'app-decimal'} disabled={!ready} onRun={() => run(toggleListCommand('app-decimal', pkg))}>
-          <ListOrdered className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Decrease indent (Shift+Tab)" disabled={!ready} onRun={() => run(indentCommand(-1))}>
-          <ListIndentDecrease className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Increase indent" disabled={!ready} onRun={() => run(indentCommand(1))}>
-          <ListIndentIncrease className="w-4 h-4" />
-        </ToolButton>
-        <Divider />
+          <ToolButton label="Italic (Ctrl/Cmd+I)" on={fmt?.italic} disabled={!ready} onRun={() => toggleItalic(!!fmt?.italic)}>
+            <Italic className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Underline (Ctrl/Cmd+U)" on={fmt?.underline} disabled={!ready} onRun={() => run(setMark(M.underline, fmt?.underline ? null : { val: 'single' }))}>
+            <Underline className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Strikethrough (Ctrl/Cmd+Shift+X)" on={fmt?.strike} disabled={!ready} onRun={() => run(setMark(M.strike, fmt?.strike ? null : { double: false }))}>
+            <Strikethrough className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Superscript (Ctrl/Cmd+.)" on={fmt?.sup} disabled={!ready} onRun={() => run(setMark(M.vertAlign, fmt?.sup ? null : { val: 'superscript' }))}>
+            <Superscript className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Subscript (Ctrl/Cmd+,)" on={fmt?.sub} disabled={!ready} onRun={() => run(setMark(M.vertAlign, fmt?.sub ? null : { val: 'subscript' }))}>
+            <Subscript className="w-4 h-4" />
+          </ToolButton>
+          <Popover label="Text color" button={<Baseline className="w-4 h-4" />}>
+            {(close) => (
+              <div className="grid grid-cols-6 gap-1.5 w-max">
+                {TEXT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={`Text color #${c}`}
+                    onClick={() => (run(setMark(M.color, { val: c, xml: '' })), close())}
+                    className="w-5 h-5 rounded-full ring-1 ring-ink/15 hover:ring-ink/50"
+                    style={{ backgroundColor: `#${c}` }}
+                  />
+                ))}
+                <button type="button" onClick={() => (run(setMark(M.color, null)), close())} className="col-span-6 text-caption text-graphite hover:text-ink mt-1">
+                  Automatic
+                </button>
+              </div>
+            )}
+          </Popover>
+          <Popover label="Highlight" button={<Highlighter className="w-4 h-4" />}>
+            {(close) => (
+              <div className="grid grid-cols-4 gap-1.5 w-max">
+                {HIGHLIGHTS.map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    aria-label={`${h.replace(/([A-Z])/g, ' $1').toLowerCase()} highlight`}
+                    onClick={() => (run(setMark(M.highlight, { val: h })), close())}
+                    className="w-5 h-5 rounded-md ring-1 ring-ink/15 hover:ring-ink/50"
+                    style={{ backgroundColor: HIGHLIGHT_CSS[h] }}
+                  />
+                ))}
+                <button type="button" onClick={() => (run(setMark(M.highlight, null)), close())} className="col-span-4 text-caption text-graphite hover:text-ink mt-1">
+                  No highlight
+                </button>
+              </div>
+            )}
+          </Popover>
+          <ToolButton label="Clear formatting (Ctrl/Cmd+\)" disabled={!ready} onRun={clearFormatting}>
+            <RemoveFormatting className="w-4 h-4" />
+          </ToolButton>
+          <Divider />
 
-        <Popover label="Insert table" button={<Table className="w-4 h-4" />}>
-          {(close) => <TableGridPicker onPick={(r, c) => (run(insertTableCommand(r, c, contentWidth)), close())} />}
-        </Popover>
-        <ToolButton label="Insert picture" disabled={!ready} onRun={() => imageInput.current?.click()}>
-          <ImageIcon className="w-4 h-4" />
-        </ToolButton>
-        <input
-          ref={imageInput}
-          type="file"
-          accept="image/png,image/jpeg,image/gif"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file && activeRef.current) insertImageFile(activeRef.current, file);
-            e.target.value = '';
-          }}
-        />
-        <ToolButton label="Link" on={!!fmt?.link} disabled={!ready} onRun={editLink}>
-          <Link className="w-4 h-4" />
-        </ToolButton>
-        <ToolButton label="Page break (Ctrl+Enter)" disabled={!ready} onRun={() => run(insertPageBreak)}>
-          <SeparatorHorizontal className="w-4 h-4" />
-        </ToolButton>
+          {(
+            [
+              ['left', 'Align left (Ctrl/Cmd+L)', TextAlignStart, null],
+              ['center', 'Center (Ctrl/Cmd+E)', TextAlignCenter, 'center'],
+              ['right', 'Align right (Ctrl/Cmd+R)', TextAlignEnd, 'right'],
+              ['justify', 'Justify (Ctrl/Cmd+J)', TextAlignJustify, 'justify'],
+            ] as const
+          ).map(([key, label, Icon, value]) => (
+            <ToolButton key={key} label={label} on={fmt?.align === key} disabled={!ready} onRun={() => run(setParagraphAttrs({ align: value }))}>
+              <Icon className="w-4 h-4" />
+            </ToolButton>
+          ))}
+          <ToolButton label="Bullets (Ctrl/Cmd+Shift+8)" on={fmt?.list === 'app-bullet'} disabled={!ready} onRun={() => run(toggleListCommand('app-bullet', pkg))}>
+            <List className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Numbering (Ctrl/Cmd+Shift+7)" on={fmt?.list === 'app-decimal'} disabled={!ready} onRun={() => run(toggleListCommand('app-decimal', pkg))}>
+            <ListOrdered className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Decrease indent (Ctrl/Cmd+[)" disabled={!ready} onRun={() => run(indentCommand(-1))}>
+            <ListIndentDecrease className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Increase indent (Ctrl/Cmd+])" disabled={!ready} onRun={() => run(indentCommand(1))}>
+            <ListIndentIncrease className="w-4 h-4" />
+          </ToolButton>
+          <Divider />
 
-        {fmt?.inTable && (
-          <div className="flex items-center gap-0.5 pl-1 ml-1 border-l border-ash" role="group" aria-label="Table">
-            <ToolButton label="Insert row above" onRun={() => run(addRowBefore)}>
-              <BetweenHorizontalStart className="w-4 h-4" />
-            </ToolButton>
-            <ToolButton label="Insert row below" onRun={() => run(addRowAfter)}>
-              <BetweenHorizontalEnd className="w-4 h-4" />
-            </ToolButton>
-            <ToolButton label="Insert column left" onRun={() => run(addColumnBefore)}>
-              <BetweenVerticalStart className="w-4 h-4" />
-            </ToolButton>
-            <ToolButton label="Insert column right" onRun={() => run(addColumnAfter)}>
-              <BetweenVerticalEnd className="w-4 h-4" />
-            </ToolButton>
-            <ToolButton label="Merge cells" onRun={() => run(mergeCells)}>
-              <TableCellsMerge className="w-4 h-4" />
-            </ToolButton>
-            <ToolButton label="Split cell" onRun={() => run(splitCell)}>
-              <TableCellsSplit className="w-4 h-4" />
-            </ToolButton>
-            <Popover label="Delete" button={<Trash2 className="w-4 h-4" />}>
-              {(close) => (
-                <div className="flex flex-col text-caption w-36">
-                  {(
-                    [
-                      ['Delete row', deleteRow],
-                      ['Delete column', deleteColumn],
-                      ['Delete table', deleteTable],
-                    ] as const
-                  ).map(([label, cmd]) => (
-                    <button key={label} type="button" onClick={() => (run(cmd), close())} className="text-left px-2.5 py-1.5 rounded-lg text-graphite hover:bg-linen hover:text-ink">
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </Popover>
-          </div>
-        )}
+          {/* One Table menu: table actions while the caret is in a table, plus the size grid. The
+              toolbar keeps its width, so entering a table no longer re-wraps it and shifts the page. */}
+          <Popover label={fmt?.inTable ? 'Table' : 'Insert table'} active={fmt?.inTable} button={<Table className="w-4 h-4" />}>
+            {(close) => (
+              <div className="w-max">
+                {fmt?.inTable && (
+                  <div className="flex flex-col text-caption w-48 mb-2 pb-2 border-b border-ash" role="group" aria-label="Table">
+                    {(
+                      [
+                        ['Insert row above', BetweenHorizontalStart, addRowBefore],
+                        ['Insert row below', BetweenHorizontalEnd, addRowAfter],
+                        ['Insert column left', BetweenVerticalStart, addColumnBefore],
+                        ['Insert column right', BetweenVerticalEnd, addColumnAfter],
+                        ['Merge cells', TableCellsMerge, mergeCells],
+                        ['Split cell', TableCellsSplit, splitCell],
+                        ['Delete row', Trash2, deleteRow],
+                        ['Delete column', Trash2, deleteColumn],
+                        ['Delete table', Trash2, deleteTable],
+                      ] as const
+                    ).map(([label, Icon, cmd]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => (run(cmd), close())}
+                        className={`flex items-center gap-2 text-left px-2.5 py-1.5 rounded-lg hover:bg-linen ${
+                          Icon === Trash2 ? 'text-graphite hover:text-papaya' : 'text-graphite hover:text-ink'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {fmt?.inTable && <div className="eyebrow mb-1.5">Insert table</div>}
+                <TableGridPicker onPick={(r, c) => (run(insertTableCommand(r, c, contentWidth)), close())} />
+              </div>
+            )}
+          </Popover>
+          <ToolButton label="Insert picture" disabled={!ready} onRun={() => imageInput.current?.click()}>
+            <ImageIcon className="w-4 h-4" />
+          </ToolButton>
+          <input
+            ref={imageInput}
+            type="file"
+            accept="image/png,image/jpeg,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && activeRef.current) insertImageFile(activeRef.current, file);
+              e.target.value = '';
+            }}
+          />
+          <ToolButton label="Link (Ctrl/Cmd+K)" on={!!fmt?.link} disabled={!ready} onRun={editLink}>
+            <Link className="w-4 h-4" />
+          </ToolButton>
+          <ToolButton label="Page break (Ctrl/Cmd+Enter)" disabled={!ready} onRun={() => run(insertPageBreak)}>
+            <SeparatorHorizontal className="w-4 h-4" />
+          </ToolButton>
+        </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="shrink-0 flex items-center gap-1.5">
           <button type="button" onClick={handlePrint} className="btn btn-ghost h-[32px] px-3 text-caption" title="Print or save as PDF">
             <Printer className="w-3.5 h-3.5" />
             <span className="hidden 2xl:inline">Print / PDF</span>
@@ -728,20 +770,20 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
             onClick={handleSave}
             disabled={!ready}
             className="btn btn-secondary h-[32px] px-3.5 text-caption"
-            title="Save document to cache and end active session"
+            title="Close this document and return to the dashboard. It stays in Recent documents with your edits."
           >
             <Check className="w-3.5 h-3.5" />
-            <span>Save</span>
+            <span>Save & close</span>
           </button>
           <button
             type="button"
             onClick={handleDownload}
             disabled={!ready}
-            className="btn btn-primary h-[32px] px-4 text-caption"
-            title="Download .docx to your device (keeps document open in workspace)"
+            className="btn btn-primary h-[32px] px-3 sm:px-4 text-caption"
+            title="Download as .docx. The document stays open."
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Download .docx</span>
+            <span className="hidden sm:inline">Download .docx</span>
           </button>
         </div>
       </div>

@@ -370,10 +370,15 @@ export interface WordEditorOptions {
   onFocus: (view: EditorView) => void;
   onImageFile: (view: EditorView, file: File) => void;
   editable?: () => boolean;
+  /** Extra key bindings (prosemirror-keymap names, e.g. 'Mod-b') that need the view. */
+  shortcuts?: Record<string, (view: EditorView) => boolean>;
 }
 
 export function createWordEditor(o: WordEditorOptions): EditorView {
   const keys = keymap({
+    ...Object.fromEntries(
+      Object.entries(o.shortcuts ?? {}).map(([key, fn]): [string, Command] => [key, (_s, _d, view) => (view ? fn(view) : false)])
+    ),
     'Mod-z': () => (o.undo(), true),
     'Shift-Mod-z': () => (o.redo(), true),
     'Mod-y': () => (o.redo(), true),
