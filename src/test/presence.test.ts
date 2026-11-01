@@ -41,10 +41,11 @@ class MemTransport implements SyncTransport {
   getPeers() { return [...MemTransport.net.keys()].filter((id) => id !== this.id); }
 }
 
-function peer(id: string, name: string, relay = false, userId = `user-${name}`) {
+function peer(id: string, name: string, relay = false, userId: string | null = `user-${name}`) {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
-  awareness.setLocalState({ user: { id: userId, name, color: '#188038' } });
+  // userId null = a tab still running a build from before per-browser ids existed
+  awareness.setLocalState({ user: { ...(userId ? { id: userId } : {}), name, color: '#188038' } });
   const transport = new MemTransport(id);
   transport.relay = relay;
   const engine = new DocSyncEngine({ doc, documentId: 'd'.repeat(64), awareness, transports: [transport], getLocalPdfBytes: () => new Uint8Array(1) });
@@ -80,6 +81,17 @@ describe('presence', () => {
     t.awareness.setLocalStateField('tool', 'sign');
     expect(remotePeers(me.awareness)[0].tool).toBe('sign'); // the live session wins
     for (const p of [me, tGhost, t, myOtherTab]) p.engine.destroy();
+  });
+
+  it('tabs still on the previous build (no id) are matched by name and colour', () => {
+    MemTransport.net.clear();
+    const me = peer('me', 'Jamie Rao', false, 'browser-me');
+    const myOldTab = peer('me-old', 'Jamie Rao', false, null);
+    const t = peer('t', 'Tanmay', false, 'browser-t');
+    const tOldTab = peer('t-old', 'Tanmay', false, null);
+    expect(names(me.awareness)).toEqual(['Tanmay']); // the screenshot showed Tanmay, Tanmay, Jamie Rao: 3 online
+    expect(remotePeers(me.awareness)[0].user.id).toBe('browser-t'); // the up-to-date session represents them
+    for (const p of [me, myOldTab, t, tOldTab]) p.engine.destroy();
   });
 
   it('a newcomer hears from each peer directly, not stale states forwarded by others', () => {

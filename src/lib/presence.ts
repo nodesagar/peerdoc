@@ -6,8 +6,8 @@ import type { Awareness } from 'y-protocols/awareness';
  * awareness): never stored in the document, expires 30 s after a peer goes quiet.
  */
 export interface PresenceUser {
-  /** Stable per browser: tabs and reloaded sessions of one person share it. */
-  id: string;
+  /** Stable per browser: tabs and reloaded sessions of one person share it. Absent from builds before it existed. */
+  id?: string;
   name: string;
   color: string;
 }
@@ -78,23 +78,39 @@ export function attributionTitle(item: { createdBy?: string; createdAt?: number 
   return `Added by ${item.createdBy}${item.createdAt ? ` · ${timeAgo(item.createdAt)}` : ''}`;
 }
 
+/** Name + colour: both come from the same per-browser storage, so they identify a browser too. */
+const looks = (u: PresenceUser) => `${u.name}\u0000${u.color}`;
+
 /**
  * Other people in the room, one entry per browser. Every tab and every reopened document is
  * a new awareness client, and a closed tab's state lingers until it times out, so one person
  * can appear several times: keep only their most recently active session, and leave out this
- * browser's own other tabs. States without a user id (older app versions) count as-is.
+ * browser's own other tabs.
+ *
+ * Tabs still running a build from before per-browser ids have no `user.id`; they are matched
+ * by name + colour instead (to an id'd session of the same person, or to each other), and one
+ * that looks like this browser's user is this browser.
  */
 export function remotePeers(awareness: Awareness): Peer[] {
-  const myId = (awareness.getLocalState() as PresenceState | null)?.user?.id;
+  const me = (awareness.getLocalState() as PresenceState | null)?.user;
   const lastActive = (clientId: number) => awareness.meta.get(clientId)?.lastUpdated ?? 0;
-  const byPerson = new Map<string | number, Peer>();
+  const others: Peer[] = [];
   awareness.getStates().forEach((state, clientId) => {
     const user = (state as PresenceState | undefined)?.user;
-    if (clientId === awareness.clientID || !user || (myId && user.id === myId)) return;
-    const person = user.id ?? clientId;
-    const seen = byPerson.get(person);
-    if (!seen || lastActive(clientId) >= lastActive(seen.clientId)) byPerson.set(person, { clientId, ...(state as PresenceState) });
+    if (clientId === awareness.clientID || !user) return;
+    const isMe = me && (user.id ? user.id === me.id : looks(user) === looks(me));
+    if (!isMe) others.push({ clientId, ...(state as PresenceState) });
   });
+  // Id'd sessions claim their look first, so an id-less tab of the same person folds into them
+  const idOf = new Map(others.filter((p) => p.user.id).map((p) => [looks(p.user), p.user.id!]));
+  const byPerson = new Map<string, Peer>();
+  for (const p of others) {
+    const person = p.user.id ?? idOf.get(looks(p.user)) ?? looks(p.user);
+    const seen = byPerson.get(person);
+    // Prefer an id'd (current build) session, then the most recently active one
+    const better = !seen || (!!p.user.id !== !!seen.user.id ? !!p.user.id : lastActive(p.clientId) >= lastActive(seen.clientId));
+    if (better) byPerson.set(person, p);
+  }
   return [...byPerson.values()].sort((a, b) => a.clientId - b.clientId);
 }
 
