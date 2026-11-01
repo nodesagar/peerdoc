@@ -1,4 +1,11 @@
-# EditorDoc P2P
+# PeerDoc (EditorDoc P2P)
+
+[![React](https://img.shields.io/badge/React-19-blue?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-6.2-646CFF?logo=vite)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
+[![CRDT](https://img.shields.io/badge/CRDT-Yjs-orange)](https://github.com/yjs/yjs)
+[![License](https://img.shields.io/badge/SDG-9.c%20Equitable%20Access-success)](#)
 
 > **Offline-first, peer-to-peer collaborative PDF & document editor.**  
 > Users can work offline for weeks, sync directly in any order without central servers, and always converge to the exact same document.  
@@ -72,7 +79,7 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
 ## 2. Key Features
 
 1. **Dashboard & Demo Loader**: Load sample confidential agreement with 1 click, open local PDF, or join a room by pasting a personal invite link (`?doc=<id>#i=<token>&o=<owner>`).
-2. **Text & Eraser Tool (`EditTool.tsx`)**: Rich typography (Helvetica, Times, Courier, etc.), font sizes, colors, and whiteout boxes with nested field-level merge protection.
+2. **Text & Eraser Tool (`EditTool.tsx`)**: In-place text editing of original PDF content, text overlays with rich typography (Helvetica, Times, Courier, etc.), font sizes, colors, and whiteout boxes with nested field-level merge protection.
 3. **Fractional Index Page Organizer (`OrganizeTool.tsx`)**: Reorder pages deterministically using fractional indices, rotate clockwise/counter-clockwise, restore/delete pages, and extract selections.
 4. **Permanent True Redactions (`RedactTool.tsx`)**: Renders page canvas, paints solid black boxes directly into pixel data, and replaces the page with a clean rasterized image. Permanently strips all sensitive metadata.
 5. **Digital Signature Tool (`SignTool.tsx`)**: Draw signatures, generate cursive typed signatures, or upload PNGs; position and stamp onto any page.
@@ -80,30 +87,37 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
 7. **Review & Comments (`Annotations.tsx`)**: Highlight, box, freehand and sticky-note markup; every annotation is a comment thread with replies, resolve/reopen and a Comments panel. Exported PDFs keep the markup and turn open threads into real PDF sticky notes.
 8. **Presence & Attribution**: Avatars of everyone in the room (click yours to rename), live cursors and selections in the editor, and "Added by … · 5 minutes ago" on every item.
 9. **Store-and-Forward Sync (`CollaborationBar.tsx`)**: Export `.cdsync` files to transfer updates via USB flash drives or email when peers are never online at the same time.
+10. **Word Document Collaboration (`WordEditor.tsx`)**: Open and collaboratively edit DOCX and legacy DOC files in a page-view editor powered by `y-prosemirror`, preserving WordprocessingML structure and lossless export.
+11. **Installable PWA & Offline Pre-caching**: Offline-first service worker precaches application assets for instant offline startup and background update prompts.
 
 ---
 
 ## 3. Getting Started
 
 ### Prerequisites
-- Node.js 18+ (tested with Node v25.9.0)
-- npm or pnpm
+- **Node.js**: 18+ (tested with Node v25.9.0)
+- **Package Manager**: npm or pnpm
+- **Browser**: Modern browser with WebRTC and IndexedDB support (Chrome, Edge, Firefox, Safari)
 
 ### Installation
 ```bash
-git clone <repo> editordoc-p2p
-cd editordoc-p2p
+git clone https://github.com/nodesagar/peerdoc.git
+cd peerdoc
 npm install
 ```
 
-### Running Locally
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+### Development Scripts
+| Command | Description |
+| :--- | :--- |
+| `npm run dev` | Starts Vite dev server at `http://localhost:3000` (host enabled) |
+| `npm run build` | Validates TypeScript and builds the production bundle |
+| `npm test` | Runs the Vitest test suite |
+| `npm run test:watch` | Runs Vitest in interactive watch mode |
+| `npm run lint` | Typechecks codebase via `tsc --noEmit` |
+| `npm run preview` | Previews the production build locally |
 
 ### Running Tests
-EditorDoc P2P includes a comprehensive Vitest test suite covering fractional indexing, multi-peer offline convergence, state-vector handshakes, `.cdsync` idempotency, and binary chunk verification.
+PeerDoc includes a comprehensive Vitest test suite covering fractional indexing, multi-peer offline convergence, state-vector handshakes, `.cdsync` idempotency, and binary chunk verification.
 ```bash
 npm test
 ```
