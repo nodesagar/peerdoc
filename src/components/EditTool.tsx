@@ -51,7 +51,7 @@ const PeerCursors: React.FC<{ awareness: Awareness | null; pageIndex: number }> 
             <path d="M1 1l5.5 13 2-5.5L14 6.5z" fill="currentColor" stroke="white" strokeWidth="1" />
           </svg>
           <span
-            className="absolute left-3.5 top-3.5 whitespace-nowrap text-[10px] font-semibold text-white px-1.5 py-0.5 rounded"
+            className="absolute left-3.5 top-3.5 whitespace-nowrap text-[10px] font-semibold text-white px-1.5 py-0.5 rounded-full shadow-md-3"
             style={{ backgroundColor: c.color }}
           >
             {c.name}
@@ -71,7 +71,7 @@ const selectPeerSelections = (peers: Peer[]) =>
 const PeerTag: React.FC<{ peer?: { name: string; color: string } }> = ({ peer }) =>
   peer ? (
     <span
-      className="absolute -top-4 left-0 whitespace-nowrap text-[9px] font-semibold text-white px-1 rounded-sm pointer-events-none"
+      className="absolute -top-4 left-0 whitespace-nowrap text-[10px] font-semibold text-white px-1.5 rounded-full pointer-events-none"
       style={{ backgroundColor: peer.color }}
     >
       {peer.name}
@@ -88,25 +88,28 @@ const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string
 
   return (
     <div className="relative">
-      <div
-        className="w-full bg-[#f4f3f2] border border-black/10 rounded-lg text-xs px-2.5 py-1.5 text-[#1a1c1c] cursor-pointer flex justify-between items-center outline-none hover:border-[#10b981] transition-colors"
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        className="w-full h-[30px] bg-cloud hover:bg-ash rounded-full text-caption font-medium pl-3 pr-2 text-ink flex justify-between items-center transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
         <span>{displayValue}</span>
-        <ChevronDown className="w-3.5 h-3.5 text-black/50" />
-      </div>
+        <ChevronDown className="w-3.5 h-3.5 text-graphite" />
+      </button>
 
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute z-50 w-full mt-1.5 bg-[#1a1c23] rounded-xl border border-white/10 shadow-lg py-1">
+          <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-md p-1.5" role="listbox">
             {fonts.map((f) => (
               <div
                 key={f}
-                className={`px-3 py-1.5 text-xs cursor-pointer flex justify-between items-center transition-colors ${
-                  displayValue === f
-                    ? 'bg-[#3b82f6]/20 text-[#3b82f6] border-l-2 border-[#3b82f6]'
-                    : 'text-white hover:bg-white/5 border-l-2 border-transparent'
+                role="option"
+                aria-selected={displayValue === f}
+                className={`px-2.5 py-1.5 rounded-xl text-caption cursor-pointer flex justify-between items-center transition-colors ${
+                  displayValue === f ? 'bg-cloud text-ink font-medium' : 'text-graphite hover:bg-linen hover:text-ink'
                 }`}
                 onClick={() => {
                   onChange(f);
@@ -132,6 +135,12 @@ const REVIEW_MODES: { mode: EditorMode; label: string; Icon: React.FC<{ classNam
   { mode: 'ink', label: 'Draw', Icon: PenLine },
   { mode: 'note', label: 'Note', Icon: MessageSquarePlus },
 ];
+
+/** Colour dot; the chosen one gets an Ink ring lifted off the toolbar. */
+const swatch = (selected: boolean) =>
+  `w-5 h-5 rounded-full transition-shadow ${selected ? 'ring-2 ring-ink ring-offset-2 ring-offset-white' : 'ring-1 ring-ink/15 hover:ring-ink/40'}`;
+/** Pressed formatting toggles fill with Ink. */
+const toggle = (on: boolean) => (on ? 'bg-ink text-white' : 'bg-cloud text-graphite hover:text-ink hover:bg-ash');
 
 interface EditToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
@@ -282,9 +291,7 @@ export const EditTool: React.FC<EditToolProps> = ({
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && onUploadFile) {
-      onUploadFile(file);
-    }
+    if (file && onUploadFile) onUploadFile(file);
   };
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvasEl: HTMLDivElement) => {
@@ -520,15 +527,15 @@ export const EditTool: React.FC<EditToolProps> = ({
 
     return (
       <div className="max-w-[1000px] mx-auto px-4 py-16 text-center">
-        <div className="bg-white rounded-2xl border-2 border-dashed border-black/15 p-12 space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+        <div className="bg-white/60 rounded-4xl border-2 border-dashed border-ink/15 p-12 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-mint text-ink flex items-center justify-center mx-auto">
             <Upload className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold">No PDF Active</h2>
-          <p className="text-xs text-[#5f6368] max-w-sm mx-auto">
+          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <p className="text-body-sm text-graphite max-w-sm mx-auto">
             Upload a PDF or return to the Dashboard to load the demo confidential agreement.
           </p>
-          <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
+          <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             <span>Select PDF</span>
             <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
@@ -539,47 +546,31 @@ export const EditTool: React.FC<EditToolProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-65px)] bg-[#f4f3f2]">
-      {/* Top Controls Toolbar */}
-      <div className="bg-white border-b border-black/10 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-2xs z-30">
-        <div className="flex items-center space-x-2">
+    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
+      {/* Top Controls Toolbar: a floating white bar on the canvas */}
+      <div className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle pl-2 pr-2 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 z-30">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Tool switch */}
-          <div className="flex bg-[#f4f3f2] p-1 rounded-xl border border-black/5">
-            <button
-              onClick={() => setActiveTool('text')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTool === 'text'
-                  ? 'bg-white text-[#1a1c1c] shadow-2xs'
-                  : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
-            >
+          <div className="segmented">
+            <button onClick={() => setActiveTool('text')} aria-pressed={activeTool === 'text'} className="segment">
               <Type className="w-3.5 h-3.5" />
               <span>Text</span>
             </button>
-            <button
-              onClick={() => setActiveTool('eraser')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTool === 'eraser'
-                  ? 'bg-white text-[#1a1c1c] shadow-2xs'
-                  : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
-            >
+            <button onClick={() => setActiveTool('eraser')} aria-pressed={activeTool === 'eraser'} className="segment">
               <Eraser className="w-3.5 h-3.5" />
               <span>Eraser</span>
             </button>
           </div>
 
           {/* Review markup */}
-          <div className="flex bg-[#f4f3f2] p-1 rounded-xl border border-black/5" role="group" aria-label="Review tools">
+          <div className="segmented" role="group" aria-label="Review tools">
             {REVIEW_MODES.map(({ mode, label, Icon }) => (
               <button
                 key={mode}
                 onClick={() => setActiveTool(mode)}
                 aria-pressed={activeTool === mode}
                 title={label}
-                className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  activeTool === mode ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
-                }`}
+                className="segment px-2.5"
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span className="hidden xl:inline">{label}</span>
@@ -588,7 +579,7 @@ export const EditTool: React.FC<EditToolProps> = ({
           </div>
 
           {(activeTool === 'highlight' || activeTool === 'box' || activeTool === 'ink' || activeTool === 'note') && (
-            <div className="flex items-center space-x-1 pl-2 border-l border-black/10" role="radiogroup" aria-label="Markup colour">
+            <div className="flex items-center gap-1.5 pl-3 border-l border-ash" role="radiogroup" aria-label="Markup colour">
               {ANNOTATION_COLORS.map((c) => (
                 <button
                   key={c}
@@ -596,7 +587,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                   aria-checked={annotationColor === c}
                   aria-label={c}
                   onClick={() => setAnnotationColor(c)}
-                  className={`w-5 h-5 rounded-full border ${annotationColor === c ? 'ring-2 ring-[#005db2]' : 'border-black/20'}`}
+                  className={swatch(annotationColor === c)}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -605,7 +596,7 @@ export const EditTool: React.FC<EditToolProps> = ({
 
           {/* Text options if active */}
           {activeTool === 'text' && (
-            <div className="flex items-center space-x-2 pl-2 border-l border-black/10">
+            <div className="flex flex-wrap items-center gap-2 pl-3 border-l border-ash">
               <div className="w-36">
                 <FontSelect
                   value={textStyle.fontFamily}
@@ -613,17 +604,19 @@ export const EditTool: React.FC<EditToolProps> = ({
                 />
               </div>
 
-              <div className="flex items-center space-x-1 bg-[#f4f3f2] rounded-lg px-2 py-1 text-xs">
+              <div className="flex items-center bg-cloud rounded-full p-0.5 text-caption">
                 <button
                   onClick={() => applyTextUpdate({ fontSize: Math.max(8, textStyle.fontSize - 2) })}
-                  className="px-1 font-bold text-black/60 hover:text-black"
+                  className="w-[26px] h-[26px] rounded-full font-semibold text-graphite hover:text-ink hover:bg-white"
+                  aria-label="Smaller text"
                 >
                   -
                 </button>
-                <span className="font-mono w-5 text-center">{textStyle.fontSize}</span>
+                <span className="tabular-nums font-medium w-6 text-center">{textStyle.fontSize}</span>
                 <button
                   onClick={() => applyTextUpdate({ fontSize: Math.min(72, textStyle.fontSize + 2) })}
-                  className="px-1 font-bold text-black/60 hover:text-black"
+                  className="w-[26px] h-[26px] rounded-full font-semibold text-graphite hover:text-ink hover:bg-white"
+                  aria-label="Larger text"
                 >
                   +
                 </button>
@@ -631,28 +624,29 @@ export const EditTool: React.FC<EditToolProps> = ({
 
               <button
                 onClick={() => applyTextUpdate({ isBold: !textStyle.isBold })}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors ${
-                  textStyle.isBold ? 'bg-[#005db2] text-white border-transparent' : 'bg-[#f4f3f2] text-black/70 border-black/5'
-                }`}
+                aria-pressed={textStyle.isBold}
+                aria-label="Bold"
+                className={`w-[30px] h-[30px] rounded-full text-caption font-bold transition-colors ${toggle(textStyle.isBold)}`}
               >
                 B
               </button>
 
               <button
                 onClick={() => applyTextUpdate({ isItalic: !textStyle.isItalic })}
-                className={`px-2.5 py-1 text-xs italic font-serif rounded-lg border transition-colors ${
-                  textStyle.isItalic ? 'bg-[#005db2] text-white border-transparent' : 'bg-[#f4f3f2] text-black/70 border-black/5'
-                }`}
+                aria-pressed={textStyle.isItalic}
+                aria-label="Italic"
+                className={`w-[30px] h-[30px] rounded-full text-body-sm italic font-serif transition-colors ${toggle(textStyle.isItalic)}`}
               >
                 I
               </button>
 
-              <div className="flex items-center space-x-1 pl-1">
+              <div className="flex items-center gap-1.5 pl-1">
                 {colors.slice(0, 6).map((c) => (
                   <button
                     key={c}
                     onClick={() => applyTextUpdate({ color: c })}
-                    className={`w-5 h-5 rounded-full border ${textStyle.color === c ? 'ring-2 ring-[#005db2]' : 'border-black/20'}`}
+                    aria-label={`Text colour ${c}`}
+                    className={swatch(textStyle.color === c)}
                     style={{ backgroundColor: c }}
                   />
                 ))}
@@ -662,14 +656,15 @@ export const EditTool: React.FC<EditToolProps> = ({
 
           {/* Eraser options */}
           {activeTool === 'eraser' && (
-            <div className="flex items-center space-x-2 pl-2 border-l border-black/10">
-              <span className="text-xs text-black/60">Color:</span>
-              <div className="flex items-center space-x-1">
+            <div className="flex items-center gap-2 pl-3 border-l border-ash">
+              <span className="text-caption text-graphite">Color:</span>
+              <div className="flex items-center gap-1.5">
                 {['#ffffff', '#faf9f8', '#f4f3f2', '#1a1c1c'].map((c) => (
                   <button
                     key={c}
                     onClick={() => setEraserColor(c)}
-                    className={`w-5 h-5 rounded-full border ${eraserColor === c ? 'ring-2 ring-emerald-500' : 'border-black/20'}`}
+                    aria-label={`Whiteout colour ${c}`}
+                    className={swatch(eraserColor === c)}
                     style={{ backgroundColor: c }}
                   />
                 ))}
@@ -679,18 +674,20 @@ export const EditTool: React.FC<EditToolProps> = ({
         </div>
 
         {/* Right tools: Zoom, Pagination, Save */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1 text-xs bg-[#f4f3f2] rounded-lg px-2 py-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-cloud rounded-full p-0.5 text-caption">
             <button
               onClick={() => setZoomLevel((z) => Math.max(50, z - 10))}
-              className="p-1 hover:text-[#005db2]"
+              className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white"
+              aria-label="Zoom out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="font-mono text-[11px] w-9 text-center">{zoomLevel}%</span>
+            <span className="tabular-nums font-medium w-11 text-center">{zoomLevel}%</span>
             <button
               onClick={() => setZoomLevel((z) => Math.min(200, z + 10))}
-              className="p-1 hover:text-[#005db2]"
+              className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white"
+              aria-label="Zoom in"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
@@ -699,9 +696,7 @@ export const EditTool: React.FC<EditToolProps> = ({
           <button
             onClick={() => setPanelOpen((o) => !o)}
             aria-pressed={panelOpen}
-            className={`flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors ${
-              panelOpen ? 'bg-[#005db2]/10 border-[#005db2]/30 text-[#005db2]' : 'border-black/10 text-[#414753] hover:bg-black/5'
-            }`}
+            className={`btn h-[34px] px-3.5 text-caption ${panelOpen ? 'bg-periwinkle text-ink' : 'btn-ghost'}`}
           >
             <MessagesSquare className="w-3.5 h-3.5" />
             <span>Comments{openThreads ? ` (${openThreads})` : ''}</span>
@@ -710,7 +705,7 @@ export const EditTool: React.FC<EditToolProps> = ({
           <button
             onClick={handleExportPDF}
             disabled={processing}
-            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            className="btn btn-primary h-[34px] px-4 text-caption"
           >
             <Download className="w-3.5 h-3.5" />
             <span>{processing ? 'Rendering...' : 'Save & Download'}</span>
@@ -740,7 +735,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                 ref={(el) => {
                   pageRefs.current[pageIdx] = el;
                 }}
-                className="relative bg-white shadow-xl rounded-md border border-black/10 select-none overflow-hidden"
+                className="relative bg-white shadow-xl rounded-lg select-none overflow-hidden"
                 style={{
                   transform: `scale(${zoomLevel / 100})`,
                   transformOrigin: 'top center',
@@ -780,7 +775,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                   <div
                     key={w.id}
                     data-id={w.id}
-                    className="eraser-node absolute cursor-move border border-dashed border-black/20 hover:border-black/50 group"
+                    className="eraser-node absolute cursor-move border border-dashed border-ink/20 hover:border-ink/50 group"
                     title={attributionTitle(w)}
                     style={{
                       left: `${w.x}%`,
@@ -797,7 +792,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                         e.stopPropagation();
                         crdt.removeWhiteout(w.id);
                       }}
-                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-opacity"
+                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -814,7 +809,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                       width: `${currentBox.w}%`,
                       height: `${currentBox.h}%`,
                       ...(activeTool === 'eraser'
-                        ? { backgroundColor: eraserColor, opacity: 0.8, borderColor: '#10b981' }
+                        ? { backgroundColor: eraserColor, opacity: 0.8, borderColor: '#0087ff' }
                         : activeTool === 'highlight'
                           ? { backgroundColor: annotationColor, opacity: 0.35, borderColor: 'transparent' }
                           : { borderColor: annotationColor, borderWidth: 2 }),
@@ -828,7 +823,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                     key={t.id}
                     data-id={t.id}
                     className={`text-overlay-node absolute cursor-move group px-1 py-0.5 rounded border transition-colors ${
-                      activeTextId === t.id ? 'border-[#005db2] bg-blue-50/20' : 'border-transparent hover:border-black/20'
+                      activeTextId === t.id ? 'border-azure bg-azure/5' : 'border-transparent hover:border-ink/20'
                     }`}
                     title={attributionTitle(t)}
                     style={{
@@ -848,7 +843,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                       value={t.text}
                       onChange={(e) => crdt.updateTextOverlay(t.id, { text: e.target.value })}
                       onFocus={() => setActiveTextId(t.id)}
-                      className="bg-transparent outline-none border-b border-transparent focus:border-[#005db2] min-w-[60px]"
+                      className="bg-transparent outline-none border-b border-transparent focus:border-azure min-w-[60px]"
                       style={{ fontSize: 'inherit', color: 'inherit', fontFamily: 'inherit' }}
                     />
                     <button
@@ -856,7 +851,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                         e.stopPropagation();
                         crdt.removeTextOverlay(t.id);
                       }}
-                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-opacity"
+                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>

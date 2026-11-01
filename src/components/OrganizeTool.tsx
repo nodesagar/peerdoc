@@ -163,26 +163,21 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
 
     return (
       <div className="max-w-[1000px] mx-auto px-4 py-16 text-center">
-        <div className="bg-white rounded-2xl border-2 border-dashed border-black/15 p-12 space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+        <div className="bg-white/60 rounded-4xl border-2 border-dashed border-ink/15 p-12 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-periwinkle text-ink flex items-center justify-center mx-auto">
             <Layers className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold">No PDF Active</h2>
-          <p className="text-xs text-[#5f6368] max-w-sm mx-auto">
+          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <p className="text-body-sm text-graphite max-w-sm mx-auto">
             Upload a PDF or return to the Dashboard to load the demo confidential agreement.
           </p>
-          <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
+          <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             <span>Select PDF</span>
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file && onUploadFile) onUploadFile(file);
-              }}
-              className="hidden"
-            />
+            <input type="file" accept="application/pdf" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && onUploadFile) onUploadFile(file);
+            }} className="hidden" />
           </label>
         </div>
       </div>
@@ -190,13 +185,13 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
   }
 
   return (
-    <div className="max-w-[1440px] mx-auto px-4 md:px-8 py-8 space-y-6">
+    <div className="max-w-[1440px] mx-auto px-4 md:px-6 pt-1 pb-10 space-y-6">
       {/* Top Controls Bar */}
-      <div className="bg-white rounded-2xl border border-black/10 p-4 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white rounded-3xl shadow-subtle p-2 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleSelectAll}
-            className="flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#f4f3f2] hover:bg-black/10 text-[#1a1c1c] transition-colors"
+            className="btn btn-soft h-[34px] px-3.5 text-caption"
           >
             <Check className="w-3.5 h-3.5" />
             <span>
@@ -206,7 +201,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
 
           <button
             onClick={() => handleRotateAll('ccw')}
-            className="flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#f4f3f2] hover:bg-black/10 text-[#1a1c1c] transition-colors"
+            className="btn btn-soft h-[34px] px-3.5 text-caption"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Rotate All Left</span>
@@ -214,7 +209,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
 
           <button
             onClick={() => handleRotateAll('cw')}
-            className="flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-[#f4f3f2] hover:bg-black/10 text-[#1a1c1c] transition-colors"
+            className="btn btn-soft h-[34px] px-3.5 text-caption"
           >
             <RotateCw className="w-3.5 h-3.5" />
             <span>Rotate All Right</span>
@@ -224,7 +219,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
             <button
               onClick={handleExtractSelected}
               disabled={isProcessing}
-              className="flex items-center space-x-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+              className="btn h-[34px] px-3.5 text-caption bg-periwinkle text-ink hover:shadow-md-3"
             >
               <Scissors className="w-3.5 h-3.5" />
               <span>Extract ({selectedPages.length})</span>
@@ -232,15 +227,15 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           )}
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="text-xs text-[#5f6368]">
-            <span className="font-semibold text-black">{crdt.pages.filter((p) => !p.deleted).length}</span> active pages
+        <div className="flex items-center gap-3">
+          <div className="text-caption text-graphite">
+            <span className="font-semibold text-ink tabular-nums">{crdt.pages.filter((p) => !p.deleted).length}</span> active pages
           </div>
 
           <button
             onClick={handleExportConverged}
             disabled={isProcessing}
-            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            className="btn btn-primary h-[34px] px-4 text-caption"
           >
             <Download className="w-3.5 h-3.5" />
             <span>{isProcessing ? 'Processing...' : 'Save & Download'}</span>
@@ -248,8 +243,8 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
         </div>
       </div>
 
-      {/* Thumbnails Grid with Dnd */}
-      <div className="bg-white/60 backdrop-blur rounded-2xl border border-black/10 p-8 shadow-2xs min-h-[500px]">
+      {/* Thumbnails Grid with Dnd: pages laid out on a dotted cutting mat */}
+      <div className="dot-grid bg-white/40 rounded-4xl ring-1 ring-ink/5 p-6 md:p-10 min-h-[500px]">
         <Document file={pdfBlobUrl}>
           <PageThumbnailGrid
             pageOrder={pageOrder}

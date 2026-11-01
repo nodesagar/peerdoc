@@ -227,26 +227,21 @@ export const SignTool: React.FC<SignToolProps> = ({
 
     return (
       <div className="max-w-[1000px] mx-auto px-4 py-16 text-center">
-        <div className="bg-white rounded-2xl border-2 border-dashed border-black/15 p-12 space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mx-auto">
+        <div className="bg-white/60 rounded-4xl border-2 border-dashed border-ink/15 p-12 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-sky text-ink flex items-center justify-center mx-auto">
             <PenTool className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold">No PDF Active</h2>
-          <p className="text-xs text-[#5f6368] max-w-sm mx-auto">
+          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <p className="text-body-sm text-graphite max-w-sm mx-auto">
             Upload a PDF or return to the Dashboard to load the demo confidential agreement.
           </p>
-          <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
+          <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             <span>Select PDF</span>
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file && onUploadFile) onUploadFile(file);
-              }}
-              className="hidden"
-            />
+            <input type="file" accept="application/pdf" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && onUploadFile) onUploadFile(file);
+            }} className="hidden" />
           </label>
         </div>
       </div>
@@ -254,16 +249,15 @@ export const SignTool: React.FC<SignToolProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-65px)] bg-[#f4f3f2]">
+    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
       {/* Top Toolbar */}
-      <div className="bg-white border-b border-black/10 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-2xs z-30">
-        <div className="flex items-center space-x-3">
-          <div className="flex bg-[#f4f3f2] p-1 rounded-xl border border-black/5">
+      <div className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle px-2 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 z-30">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segmented">
             <button
               onClick={() => setActiveTab('draw')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'draw' ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'draw'}
+              className="segment"
             >
               <PenTool className="w-3.5 h-3.5" />
               <span>Draw</span>
@@ -273,18 +267,16 @@ export const SignTool: React.FC<SignToolProps> = ({
                 setActiveTab('type');
                 handleGenerateTypedSig(typedName);
               }}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'type' ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'type'}
+              className="segment"
             >
               <Type className="w-3.5 h-3.5" />
               <span>Type</span>
             </button>
             <button
               onClick={() => setActiveTab('upload')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'upload' ? 'bg-white text-[#1a1c1c] shadow-2xs' : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'upload'}
+              className="segment"
             >
               <Upload className="w-3.5 h-3.5" />
               <span>Upload</span>
@@ -292,7 +284,7 @@ export const SignTool: React.FC<SignToolProps> = ({
           </div>
 
           {activeTab === 'draw' && (
-            <div className="flex items-center space-x-2 border-l border-black/10 pl-2">
+            <div className="flex items-center gap-1.5 border-l border-ash pl-3">
               <canvas
                 ref={sigCanvasRef}
                 width={180}
@@ -301,12 +293,13 @@ export const SignTool: React.FC<SignToolProps> = ({
                 onMouseMove={drawSig}
                 onMouseUp={finishDrawSig}
                 onMouseLeave={finishDrawSig}
-                className="bg-white border border-black/15 rounded-lg cursor-crosshair shadow-inner"
+                className="bg-white ring-1 ring-ash rounded-xl cursor-crosshair"
               />
               <button
                 onClick={clearSigCanvas}
-                className="p-1.5 hover:bg-black/5 text-[#5f6368] rounded-lg"
+                className="btn btn-ghost h-8 w-8 px-0"
                 title="Clear Signature"
+                aria-label="Clear Signature"
               >
                 <Eraser className="w-3.5 h-3.5" />
               </button>
@@ -314,7 +307,7 @@ export const SignTool: React.FC<SignToolProps> = ({
           )}
 
           {activeTab === 'type' && (
-            <div className="flex items-center space-x-2 border-l border-black/10 pl-2">
+            <div className="flex items-center gap-2 border-l border-ash pl-3">
               <input
                 type="text"
                 value={typedName}
@@ -322,14 +315,15 @@ export const SignTool: React.FC<SignToolProps> = ({
                   setTypedName(e.target.value);
                   handleGenerateTypedSig(e.target.value);
                 }}
-                className="bg-[#f4f3f2] text-xs px-2.5 py-1.5 rounded-lg border border-black/10 outline-none w-36"
+                aria-label="Name to sign"
+                className="field h-[34px] w-40 rounded-full bg-cloud border-transparent text-caption px-3.5"
               />
             </div>
           )}
 
           {activeTab === 'upload' && (
-            <div className="flex items-center space-x-2 border-l border-black/10 pl-2">
-              <label className="text-xs bg-[#f4f3f2] hover:bg-black/10 px-3 py-1.5 rounded-lg cursor-pointer border border-black/10 font-medium">
+            <div className="flex items-center gap-2 border-l border-ash pl-3">
+              <label className="btn btn-soft h-[34px] px-3.5 text-caption cursor-pointer">
                 Choose PNG
                 <input type="file" accept="image/png,image/jpeg" onChange={handleUploadSig} className="hidden" />
               </label>
@@ -337,23 +331,23 @@ export const SignTool: React.FC<SignToolProps> = ({
           )}
 
           {activeSignatureDataUrl ? (
-            <span className="text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+            <span className="chip bg-mint">
               Click anywhere on PDF to stamp
             </span>
           ) : (
-            <span className="text-[11px] text-[#5f6368]">
+            <span className="text-caption text-graphite">
               Create signature to stamp on document
             </span>
           )}
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1 text-xs bg-[#f4f3f2] rounded-lg px-2 py-1">
-            <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} className="p-1 hover:text-[#005db2]">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-cloud rounded-full p-0.5 text-caption">
+            <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} aria-label="Zoom out" className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white">
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="font-mono text-[11px] w-9 text-center">{zoomLevel}%</span>
-            <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} className="p-1 hover:text-[#005db2]">
+            <span className="tabular-nums font-medium w-11 text-center">{zoomLevel}%</span>
+            <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} aria-label="Zoom in" className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white">
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -361,7 +355,7 @@ export const SignTool: React.FC<SignToolProps> = ({
           <button
             onClick={handleExportSigned}
             disabled={processing}
-            className="flex items-center space-x-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            className="btn btn-primary h-[34px] px-4 text-caption"
           >
             <Download className="w-3.5 h-3.5" />
             <span>{processing ? 'Signing...' : 'Save & Download'}</span>
@@ -397,7 +391,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                   const targetCanvas = pageRefs.current[pageIdx];
                   if (targetCanvas) handlePointerMove(e, targetCanvas);
                 }}
-                className={`relative bg-white shadow-xl rounded-md border border-black/10 select-none overflow-hidden ${
+                className={`relative bg-white shadow-xl rounded-lg select-none overflow-hidden ${
                   activeSignatureDataUrl ? 'cursor-copy' : 'cursor-default'
                 }`}
                 style={{
@@ -418,7 +412,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                   <div
                     key={s.id}
                     title={attributionTitle(s)}
-                    className="sig-node absolute cursor-move border border-dashed border-purple-500 hover:border-purple-700 group p-1 bg-white/40"
+                    className="sig-node absolute cursor-move border border-dashed border-azure/60 hover:border-azure group p-1 bg-white/40"
                     style={{
                       left: `${s.x}%`,
                       top: `${s.y}%`,
@@ -436,7 +430,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                         e.stopPropagation();
                         crdt.removeSignature(s.id);
                       }}
-                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-opacity cursor-pointer"
+                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>

@@ -11,24 +11,21 @@ export const AccessCard: React.FC<AccessCardProps> = ({ status, onReturnToDashbo
   const pending = status === 'pending';
   const Icon = pending ? DoorOpen : UserX;
   return (
-    <div className="max-w-[560px] mx-auto px-4 py-12">
-      <div className="bg-white rounded-2xl border border-black/10 shadow-lg p-6 md:p-8 space-y-4 text-center" aria-live="polite">
-        <div className="w-14 h-14 rounded-2xl bg-[#005db2]/10 text-[#005db2] flex items-center justify-center mx-auto">
+    <div className="max-w-[600px] mx-auto px-4 py-16">
+      <div className="bg-white rounded-3xl shadow-xl p-8 md:p-10 space-y-5 text-center" aria-live="polite">
+        <div className={`w-16 h-16 rounded-2xl ${pending ? 'bg-periwinkle' : 'bg-marigold'} text-ink flex items-center justify-center mx-auto`}>
           <Icon className={`w-7 h-7 ${pending ? 'animate-pulse' : ''}`} />
         </div>
-        <h2 className="text-xl font-bold text-[#1a1c1c] tracking-tight">
+        <h2 className="font-serif text-subheading md:text-heading-sm text-ink text-balance">
           {pending ? 'Waiting for the owner to let you in' : 'You no longer have access'}
         </h2>
-        <p className="text-sm text-[#5f6368] leading-relaxed">
+        <p className="text-body text-graphite max-w-md mx-auto">
           {pending
             ? 'Your invite is valid. The owner’s browser admits you automatically the next time EditorDoc is open there, with no server involved. Keep this tab open.'
             : 'The owner removed you from this document. You will not receive further changes. Anything already in this browser stays here.'}
         </p>
-        <button
-          onClick={onReturnToDashboard}
-          className="inline-flex items-center gap-1.5 text-xs text-[#5f6368] hover:text-[#1a1c1c] px-3 py-2 rounded-xl transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
+        <button onClick={onReturnToDashboard} className="btn btn-ghost">
+          <ArrowLeft className="w-4 h-4" />
           Dashboard
         </button>
       </div>

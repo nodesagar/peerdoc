@@ -226,26 +226,21 @@ export const RedactTool: React.FC<RedactToolProps> = ({
 
     return (
       <div className="max-w-[1000px] mx-auto px-4 py-16 text-center">
-        <div className="bg-white rounded-2xl border-2 border-dashed border-black/15 p-12 space-y-4">
-          <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto">
+        <div className="bg-white/60 rounded-4xl border-2 border-dashed border-ink/15 p-12 space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-marigold text-ink flex items-center justify-center mx-auto">
             <ShieldAlert className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold">No PDF Active</h2>
-          <p className="text-xs text-[#5f6368] max-w-sm mx-auto">
+          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <p className="text-body-sm text-graphite max-w-sm mx-auto">
             Upload a PDF or return to the Dashboard to load the demo confidential agreement.
           </p>
-          <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
+          <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
             <span>Select PDF</span>
-            <input
-              type="file"
-              accept="application/pdf"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file && onUploadFile) onUploadFile(file);
-              }}
-              className="hidden"
-            />
+            <input type="file" accept="application/pdf" onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && onUploadFile) onUploadFile(file);
+            }} className="hidden" />
           </label>
         </div>
       </div>
@@ -253,40 +248,31 @@ export const RedactTool: React.FC<RedactToolProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-65px)] bg-[#f4f3f2]">
+    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
       {/* Top Toolbar */}
-      <div className="bg-white border-b border-black/10 px-4 py-2 flex flex-wrap items-center justify-between gap-3 shadow-2xs z-30">
-        <div className="flex items-center space-x-3">
-          <div className="flex bg-[#f4f3f2] p-1 rounded-xl border border-black/5">
+      <div className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle px-2 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 z-30">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="segmented">
             <button
               onClick={() => setActiveTab('draw')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'draw'
-                  ? 'bg-white text-[#1a1c1c] shadow-2xs'
-                  : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'draw'}
+              className="segment"
             >
               <Square className="w-3.5 h-3.5" />
               <span>Draw Box</span>
             </button>
             <button
               onClick={() => setActiveTab('wipe')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'wipe'
-                  ? 'bg-white text-[#1a1c1c] shadow-2xs'
-                  : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'wipe'}
+              className="segment"
             >
               <Search className="w-3.5 h-3.5" />
               <span>Search Wipe</span>
             </button>
             <button
               onClick={() => setActiveTab('metadata')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                activeTab === 'metadata'
-                  ? 'bg-white text-[#1a1c1c] shadow-2xs'
-                  : 'text-[#5f6368] hover:text-[#1a1c1c]'
-              }`}
+              aria-pressed={activeTab === 'metadata'}
+              className="segment"
             >
               <FileCode className="w-3.5 h-3.5" />
               <span>Metadata</span>
@@ -294,36 +280,38 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           </div>
 
           {activeTab === 'wipe' && (
-            <div className="flex items-center space-x-2 pl-2 border-l border-black/10">
+            <div className="flex items-center gap-2 pl-3 border-l border-ash">
               <input
                 type="text"
                 placeholder="Text to redact..."
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                className="bg-[#f4f3f2] text-xs px-2.5 py-1.5 rounded-lg border border-black/10 outline-none w-44"
+                aria-label="Text to redact"
+                className="field h-[34px] w-44 rounded-full bg-cloud border-transparent text-caption px-3.5"
               />
               <button
                 onClick={handleSearchWipe}
                 disabled={isSearching}
-                className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
+                className="btn btn-primary h-[34px] px-3.5 text-caption"
               >
                 {isSearching ? 'Wiping...' : 'Redact Matches'}
               </button>
             </div>
           )}
 
-          <div className="text-xs text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200 font-medium">
+          <div className="chip bg-cloud tabular-nums ml-1">
+            <span className="w-2.5 h-2.5 rounded-[3px] bg-ink" aria-hidden />
             {crdt.redactions.length} {crdt.redactions.length === 1 ? 'Redaction' : 'Redactions'}
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-1 text-xs bg-[#f4f3f2] rounded-lg px-2 py-1">
-            <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} className="p-1 hover:text-[#005db2]">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-cloud rounded-full p-0.5 text-caption">
+            <button onClick={() => setZoomLevel((z) => Math.max(50, z - 10))} aria-label="Zoom out" className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white">
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="font-mono text-[11px] w-9 text-center">{zoomLevel}%</span>
-            <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} className="p-1 hover:text-[#005db2]">
+            <span className="tabular-nums font-medium w-11 text-center">{zoomLevel}%</span>
+            <button onClick={() => setZoomLevel((z) => Math.min(200, z + 10))} aria-label="Zoom in" className="w-[26px] h-[26px] rounded-full flex items-center justify-center text-graphite hover:text-ink hover:bg-white">
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -331,7 +319,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           <button
             onClick={handleExportRedacted}
             disabled={processing}
-            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+            className="btn btn-primary h-[34px] px-4 text-caption"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>{processing ? 'Sanitizing Pixels...' : 'Burn Redactions & Download'}</span>
@@ -341,38 +329,40 @@ export const RedactTool: React.FC<RedactToolProps> = ({
 
       {/* Main View Area */}
       {activeTab === 'metadata' ? (
-        <div className="max-w-2xl mx-auto p-8 space-y-6">
-          <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-4">
-            <h3 className="text-base font-bold text-[#1a1c1c] flex items-center space-x-2">
-              <FileCode className="w-4 h-4 text-rose-600" />
+        <div className="w-full max-w-2xl mx-auto px-4 py-10 space-y-6">
+          <div className="bg-white rounded-3xl shadow-xl p-6 md:p-8 space-y-4">
+            <h3 className="text-lg font-semibold tracking-[-0.3px] text-ink flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-xl bg-marigold flex items-center justify-center shrink-0">
+                <FileCode className="w-4 h-4" />
+              </span>
               <span>Document Metadata to be Stripped</span>
             </h3>
-            <p className="text-xs text-[#5f6368]">
+            <p className="text-body-sm text-graphite">
               During export, EditorDoc P2P permanently removes all metadata tags, author info, and creator history.
             </p>
             {metadata ? (
-              <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-[#f4f3f2] p-4 rounded-xl">
+              <div className="grid grid-cols-2 gap-4 text-caption font-mono text-ink bg-linen p-4 rounded-2xl">
                 <div>
-                  <span className="text-black/50">Title:</span> {metadata.title || 'None'}
+                  <span className="text-graphite">Title:</span> {metadata.title || 'None'}
                 </div>
                 <div>
-                  <span className="text-black/50">Author:</span> {metadata.author || 'None'}
+                  <span className="text-graphite">Author:</span> {metadata.author || 'None'}
                 </div>
                 <div>
-                  <span className="text-black/50">Subject:</span> {metadata.subject || 'None'}
+                  <span className="text-graphite">Subject:</span> {metadata.subject || 'None'}
                 </div>
                 <div>
-                  <span className="text-black/50">Producer:</span> {metadata.producer || 'None'}
+                  <span className="text-graphite">Producer:</span> {metadata.producer || 'None'}
                 </div>
                 <div>
-                  <span className="text-black/50">Creation Date:</span> {metadata.creationDate || 'None'}
+                  <span className="text-graphite">Creation Date:</span> {metadata.creationDate || 'None'}
                 </div>
                 <div>
-                  <span className="text-black/50">Modified Date:</span> {metadata.modificationDate || 'None'}
+                  <span className="text-graphite">Modified Date:</span> {metadata.modificationDate || 'None'}
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-black/50">Reading metadata...</div>
+              <div className="text-caption text-graphite">Reading metadata...</div>
             )}
           </div>
         </div>
@@ -399,7 +389,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                   ref={(el) => {
                     pageRefs.current[pageIdx] = el;
                   }}
-                  className="relative bg-white shadow-xl rounded-md border border-black/10 select-none overflow-hidden"
+                  className="relative bg-white shadow-xl rounded-lg select-none overflow-hidden"
                   style={{
                     transform: `scale(${zoomLevel / 100})`,
                     transformOrigin: 'top center',
@@ -426,7 +416,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                     <div
                       key={r.id}
                       title={attributionTitle(r)}
-                      className="absolute bg-black flex items-center justify-center text-white/50 text-[10px] font-mono tracking-widest border border-red-500/30 group"
+                      className="absolute bg-black flex items-center justify-center text-white/50 text-[10px] font-mono tracking-widest border border-papaya/40 group"
                       style={{
                         left: `${r.x}%`,
                         top: `${r.y}%`,
@@ -440,7 +430,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                           e.stopPropagation();
                           crdt.removeRedaction(r.id);
                         }}
-                        className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md transition-opacity cursor-pointer"
+                        className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -450,7 +440,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                   {/* In-progress drawing box */}
                   {isDrawing && currentBox && currentBox.pageIndex === pageIdx && (
                     <div
-                      className="absolute bg-black/80 border-2 border-red-500 pointer-events-none flex items-center justify-center text-red-400 text-[10px] font-mono"
+                      className="absolute bg-black/80 border-2 border-papaya pointer-events-none flex items-center justify-center text-papaya text-[10px] font-mono"
                       style={{
                         left: `${currentBox.x}%`,
                         top: `${currentBox.y}%`,

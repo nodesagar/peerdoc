@@ -12,12 +12,15 @@ export const Highlighter: React.FC<HighlighterProps> = ({
   color = '#87CEFA',
 }) => {
   if (action === 'underline') {
+    // A marker swipe under the lower half of the line, like a pen on paper
     return (
       <span
-        className="relative inline-block font-semibold"
+        className="relative inline font-medium text-ink"
         style={{
-          borderBottom: `2.5px solid ${color}`,
-          paddingBottom: '2px',
+          backgroundImage: `linear-gradient(transparent 48%, ${color} 48%, ${color} 94%, transparent 94%)`,
+          boxDecorationBreak: 'clone',
+          WebkitBoxDecorationBreak: 'clone',
+          padding: '0 2px',
         }}
       >
         {children}

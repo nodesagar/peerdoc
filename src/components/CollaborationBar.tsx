@@ -28,6 +28,9 @@ interface CollaborationBarProps {
   access: RoomAccessApi;
 }
 
+const divider = <div className="h-4 w-px bg-ink/10 shrink-0 hidden sm:block" />;
+const iconBtn = 'btn btn-ghost h-8 w-8 px-0';
+
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   documentId,
   syncStatus,
@@ -47,7 +50,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
 
   if (!documentId) {
     return (
-      <div className="flex items-center space-x-1.5 text-xs text-[#5f6368] px-3 py-1 bg-black/[0.03] border border-black/5 rounded-full h-[34px]">
+      <div className="flex items-center gap-1.5 text-caption text-graphite px-3 h-9 rounded-full bg-ink/[0.04]">
         <FolderSync className="w-3.5 h-3.5" />
         <span>No active document</span>
       </div>
@@ -65,14 +68,14 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   };
 
   return (
-    <div className="flex items-center flex-nowrap space-x-1 sm:space-x-2 text-xs bg-white/90 backdrop-blur border border-black/10 rounded-xl px-1.5 sm:px-2.5 py-1 shadow-2xs h-[34px] shrink-0">
+    <div className="flex items-center flex-nowrap gap-1 sm:gap-1.5 text-caption h-9 shrink-0">
       {/* Sync / P2P Status Indicator */}
-      <div className="flex items-center space-x-1.5 font-medium shrink-0">
+      <div className="flex items-center shrink-0">
         {peerCount > 0 ? (
-          <span className="flex items-center space-x-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+          <span className="chip bg-mint">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ink/40"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
             </span>
             <Users className="w-3.5 h-3.5" />
             <span>
@@ -81,7 +84,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
             </span>
           </span>
         ) : (
-          <span className="flex items-center space-x-1 text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200" title="CRDT changes saved locally in IndexedDB; will sync when peers connect">
+          <span className="chip bg-marigold" title="CRDT changes saved locally in IndexedDB; will sync when peers connect">
             <WifiOff className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Offline (Saved)</span>
             <span className="sr-only sm:hidden">Offline, changes saved</span>
@@ -93,7 +96,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
 
       {servingCount > 0 && (
         <span
-          className="flex items-center space-x-1 text-[#005db2] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-medium shrink-0"
+          className="chip bg-periwinkle shrink-0"
           title="A peer requested the original PDF; it is being sent to them now"
         >
           <Upload className="w-3.5 h-3.5 animate-pulse" />
@@ -101,7 +104,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         </span>
       )}
 
-      <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
+      {divider}
 
       {/* Undo / Redo (only this user's edits) */}
       <div className="flex items-center shrink-0">
@@ -110,59 +113,59 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           disabled={!canUndo}
           aria-label="Undo"
           title="Undo your last edit (Ctrl/Cmd+Z)"
-          className="p-1 rounded-md text-[#414753] hover:bg-black/[0.05] disabled:opacity-30 disabled:hover:bg-transparent"
+          className={iconBtn}
         >
-          <Undo2 className="w-3.5 h-3.5" />
+          <Undo2 className="w-4 h-4" />
         </button>
         <button
           onClick={onRedo}
           disabled={!canRedo}
           aria-label="Redo"
           title="Redo (Ctrl/Cmd+Shift+Z)"
-          className="p-1 rounded-md text-[#414753] hover:bg-black/[0.05] disabled:opacity-30 disabled:hover:bg-transparent"
+          className={iconBtn}
         >
-          <Redo2 className="w-3.5 h-3.5" />
+          <Redo2 className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
+      {divider}
 
       {/* Room ID & Share */}
-      <div className="flex items-center space-x-1 shrink-0">
+      <div className="flex items-center shrink-0">
         <button
           onClick={() => shareRef.current?.showModal()}
-          className="flex items-center space-x-1 text-[#414753] hover:text-[#005db2] bg-black/[0.04] hover:bg-[#005db2]/10 px-2 py-0.5 rounded-md transition-colors"
+          className="btn btn-primary h-8 px-3 gap-1.5 text-caption"
           title={`Invite-only room for document ${documentId}\nInvite people or remove access`}
           aria-label="Share: invite people or remove access"
         >
-          <Lock className="w-3 h-3 text-[#005db2]" />
-          <span className="hidden sm:inline font-mono text-[11px] font-semibold">{shortDocId}</span>
-          <span className="font-semibold">{access.status === 'owner' ? 'Share' : 'Access'}</span>
+          <Lock className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline font-mono text-[11px] font-normal text-white/70">{shortDocId}</span>
+          <span>{access.status === 'owner' ? 'Share' : 'Access'}</span>
         </button>
         <SharePanel access={access} dialogRef={shareRef} />
       </div>
 
-      <div className="h-3.5 w-px bg-black/10 shrink-0 hidden sm:block" />
+      {divider}
 
       {/* Offline Store-and-Forward CDS buttons (in the header menu on phones) */}
-      <div className="hidden sm:flex items-center space-x-1 shrink-0">
+      <div className="hidden sm:flex items-center shrink-0">
         <button
           onClick={onExportSync}
-          className="flex items-center space-x-1 text-[#414753] hover:text-[#1a1c1c] hover:bg-black/[0.05] px-2 py-0.5 rounded-md transition-colors"
+          className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
           title="Export current CRDT state as .cdsync file for air-gapped / offline sync"
           aria-label="Export .cdsync"
         >
-          <Download className="w-3 h-3 text-black/60" />
+          <Download className="w-4 h-4" />
           <span className="hidden 2xl:inline">Export .cdsync</span>
         </button>
 
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center space-x-1 text-[#414753] hover:text-[#1a1c1c] hover:bg-black/[0.05] px-2 py-0.5 rounded-md transition-colors"
+          className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
           title="Import .cdsync file to apply offline peer updates"
           aria-label="Import .cdsync"
         >
-          <Upload className="w-3 h-3 text-black/60" />
+          <Upload className="w-4 h-4" />
           <span className="hidden 2xl:inline">Import .cdsync</span>
         </button>
         <input

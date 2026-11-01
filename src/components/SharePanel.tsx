@@ -33,27 +33,27 @@ export const SharePanel: React.FC<{ access: RoomAccessApi; dialogRef: React.RefO
     }
   };
 
-  const row = 'flex items-center gap-2 px-3 py-2 text-sm';
-  const iconBtn = 'p-1.5 rounded-md text-[#5f6368] hover:bg-black/[0.06] hover:text-[#1a1c1c]';
+  const row = 'flex items-center gap-2.5 px-4 py-2.5 text-body-sm';
+  const iconBtn = 'btn btn-ghost h-8 w-8 px-0';
 
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby="share-title"
-      className="m-auto w-[min(440px,calc(100vw-32px))] rounded-2xl border border-black/10 bg-white p-0 text-[#1a1c1c] shadow-xl backdrop:bg-black/30"
+      className="m-auto w-[min(460px,calc(100vw-32px))] rounded-3xl bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && dialogRef.current?.close()}
     >
-      <div className="p-5 space-y-4">
+      <div className="p-6 space-y-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 id="share-title" className="text-base font-bold">Who has access</h2>
-            <p className="text-xs text-[#5f6368] mt-0.5">
+            <h2 id="share-title" className="font-serif text-subheading text-ink">Who has access</h2>
+            <p className="text-body-sm text-graphite mt-1">
               {isOwner
                 ? 'Each link works once, for one person. Removing someone changes the room key for everyone else.'
                 : 'Only the owner can invite or remove people.'}
             </p>
           </div>
-          <button onClick={() => dialogRef.current?.close()} className={iconBtn} aria-label="Close">
+          <button onClick={() => dialogRef.current?.close()} className={`${iconBtn} -mr-2 -mt-1`} aria-label="Close">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -67,44 +67,48 @@ export const SharePanel: React.FC<{ access: RoomAccessApi; dialogRef: React.RefO
               placeholder="Who is this for? e.g. Alice"
               maxLength={40}
               aria-label="Name of the person to invite"
-              className="flex-1 min-w-0 rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-2 focus:outline-[#005db2]"
+              className="field flex-1 min-w-0"
             />
-            <button type="submit" className="inline-flex items-center gap-1.5 rounded-lg bg-[#005db2] px-3 py-2 text-sm font-semibold text-white hover:bg-[#004a8f]">
+            <button type="submit" className="btn btn-primary h-11 px-4">
               <Link2 className="w-4 h-4" />
               Invite
             </button>
           </form>
         )}
         {copiedId?.startsWith('new:') && (
-          <p className="text-xs text-emerald-700 flex items-center gap-1" role="status">
+          <p className="chip bg-mint py-1" role="status">
             <Check className="w-3.5 h-3.5" /> Invite link copied. Send it privately to that person only.
           </p>
         )}
 
-        <ul className="rounded-xl border border-black/10 divide-y divide-black/5">
+        <ul className="rounded-2xl bg-linen divide-y divide-ash overflow-hidden">
           {access.members.map((m) => (
             <li key={m.id} className={row}>
-              {m.isOwner && <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" aria-label="Owner" />}
+              {m.isOwner && (
+                <span className="w-6 h-6 rounded-full bg-marigold flex items-center justify-center shrink-0">
+                  <Crown className="w-3.5 h-3.5" aria-label="Owner" />
+                </span>
+              )}
               <span className="flex-1 truncate">
                 {m.label}
-                {m.isMe && <span className="text-[#5f6368]"> (you)</span>}
+                {m.isMe && <span className="text-graphite"> (you)</span>}
               </span>
               {isOwner && !m.isMe && (
-                <button onClick={() => remove(m.id, m.label)} className={`${iconBtn} hover:text-red-700`} aria-label={`Remove ${m.label}`} title="Remove access">
+                <button onClick={() => remove(m.id, m.label)} className={`${iconBtn} hover:text-papaya`} aria-label={`Remove ${m.label}`} title="Remove access">
                   <UserMinus className="w-4 h-4" />
                 </button>
               )}
             </li>
           ))}
           {access.invites.map((i) => (
-            <li key={i.id} className={`${row} text-[#5f6368]`}>
+            <li key={i.id} className={`${row} text-graphite`}>
               <span className="flex-1 truncate">
-                {i.label} <span className="text-xs">· invited, not joined yet</span>
+                {i.label} <span className="text-caption">· invited, not joined yet</span>
               </span>
               <button onClick={() => copy(i.id, access.inviteLinkFor(i.token))} className={iconBtn} aria-label={`Copy invite link for ${i.label}`} title="Copy invite link">
-                {copiedId === i.id ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                {copiedId === i.id ? <Check className="w-4 h-4 text-ink" /> : <Copy className="w-4 h-4" />}
               </button>
-              <button onClick={() => access.revokeInvite(i.id)} className={`${iconBtn} hover:text-red-700`} aria-label={`Cancel invite for ${i.label}`} title="Cancel invite">
+              <button onClick={() => access.revokeInvite(i.id)} className={`${iconBtn} hover:text-papaya`} aria-label={`Cancel invite for ${i.label}`} title="Cancel invite">
                 <Trash2 className="w-4 h-4" />
               </button>
             </li>

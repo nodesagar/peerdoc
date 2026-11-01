@@ -33,13 +33,13 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({ awareness, use
 
   const dot = (u: PresenceUser) => ({ backgroundColor: u.color });
   const base =
-    'w-6 h-6 rounded-full text-[10px] font-bold text-white flex items-center justify-center ring-2 ring-white shrink-0';
+    'w-7 h-7 rounded-full text-[11px] font-semibold text-white flex items-center justify-center ring-2 ring-white shrink-0';
 
   return (
     <div className="flex items-center -space-x-1.5 shrink-0" aria-label={`${peers.length + 1} ${peers.length === 0 ? 'person' : 'people'} in this room`}>
       <button
         onClick={rename}
-        className={`${base} hover:scale-110 transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#005db2]`}
+        className={`${base} hover:scale-110 transition-transform`}
         style={dot(user)}
         title={`You: ${user.name} (click to rename)`}
         aria-label={`You are ${user.name}. Rename`}
@@ -60,7 +60,7 @@ export const PresenceAvatars: React.FC<PresenceAvatarsProps> = ({ awareness, use
       ))}
       {hidden > 0 && (
         <span
-          className={`${base} bg-[#5f6368]`}
+          className={`${base} bg-graphite`}
           title={peers.slice(MAX_SHOWN).map((p) => p.user.name).join(', ')}
         >
           +{hidden}

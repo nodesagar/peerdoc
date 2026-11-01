@@ -41,7 +41,7 @@ export const UpdateBanner: React.FC = () => {
   return (
     <div
       role="status"
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[#1a1c1c] text-white text-sm px-4 py-2.5 rounded-xl shadow-lg max-w-[calc(100vw-32px)]"
+      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-ink text-white text-body-sm pl-5 pr-1.5 py-1.5 rounded-full shadow-xl max-w-[calc(100vw-32px)]"
     >
       <span>A new version is ready. Your edits are saved.</span>
       <button
@@ -49,7 +49,7 @@ export const UpdateBanner: React.FC = () => {
           reloadOnControllerChange = true;
           waiting.postMessage('skipWaiting');
         }}
-        className="flex items-center gap-1.5 bg-white text-[#1a1c1c] font-medium px-3 py-1 rounded-lg hover:bg-white/90"
+        className="btn h-8 px-3.5 bg-white text-ink hover:bg-white/90"
       >
         <RefreshCw className="w-3.5 h-3.5" />
         Reload

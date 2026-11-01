@@ -37,7 +37,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
       {annotations.map((a) => {
         const selected = a.id === selectedId || !!peerSelections[a.id];
-        const ring = peerSelections[a.id]?.color ?? '#005db2';
+        const ring = peerSelections[a.id]?.color ?? '#0087ff'; // Azure: selection
         const common = {
           'data-id': a.id,
           className: 'annotation-node cursor-pointer',
@@ -85,14 +85,14 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             key={a.id}
             data-id={a.id}
             title={attributionTitle(a)}
-            className={`annotation-node absolute z-[6] -translate-y-full flex items-center gap-0.5 px-1 py-0.5 rounded-md rounded-bl-none text-white text-[10px] font-bold shadow cursor-pointer ${
+            className={`annotation-node absolute z-[6] -translate-y-full flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg rounded-bl-none text-white text-[10px] font-bold shadow-md-3 cursor-pointer ${
               a.resolved ? 'opacity-50' : ''
             }`}
             style={{
               left: `${a.x}%`,
               top: `${a.y}%`,
               backgroundColor: a.color,
-              outline: a.id === selectedId ? '2px solid #005db2' : peer ? `2px solid ${peer.color}` : undefined,
+              outline: a.id === selectedId ? '2px solid var(--color-azure)' : peer ? `2px solid ${peer.color}` : undefined,
               outlineOffset: 1,
             }}
           >
@@ -139,17 +139,17 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
   const resolvedCount = annotations.filter((a) => a.resolved).length;
 
   return (
-    <aside className="w-80 shrink-0 bg-white border-l border-black/10 flex flex-col min-h-0" aria-label="Comments">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-black/10">
-        <h2 className="text-sm font-semibold">Comments</h2>
+    <aside className="w-80 shrink-0 mr-4 md:mr-6 my-4 bg-white rounded-3xl shadow-xl flex flex-col min-h-0 overflow-hidden" aria-label="Comments">
+      <div className="flex items-center justify-between pl-5 pr-3 py-3 border-b border-ash">
+        <h2 className="text-body font-semibold text-ink">Comments</h2>
         <div className="flex items-center gap-2">
           {resolvedCount > 0 && (
-            <label className="flex items-center gap-1 text-[11px] text-[#5f6368] cursor-pointer">
-              <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+            <label className="flex items-center gap-1.5 text-caption text-graphite cursor-pointer">
+              <input type="checkbox" className="accent-ink" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
               Resolved ({resolvedCount})
             </label>
           )}
-          <button onClick={onClose} aria-label="Close comments" className="p-1 rounded hover:bg-black/5">
+          <button onClick={onClose} aria-label="Close comments" className="btn btn-ghost h-8 w-8 px-0">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -157,7 +157,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {ordered.length === 0 && (
-          <p className="text-xs text-[#5f6368] text-center py-8 px-4">
+          <p className="text-body-sm text-graphite text-center py-10 px-4">
             No comments yet. Use Highlight, Box, Draw or Note in the toolbar, then click it to start a thread.
           </p>
         )}
@@ -217,8 +217,8 @@ const Thread: React.FC<{
     <div
       ref={cardRef}
       onClick={onSelect}
-      className={`rounded-xl border p-3 space-y-2 text-xs cursor-pointer transition-colors ${
-        selected ? 'border-[#005db2] bg-blue-50/40' : 'border-black/10 hover:border-black/20'
+      className={`rounded-2xl border p-3.5 space-y-2.5 text-body-sm cursor-pointer transition-colors ${
+        selected ? 'border-azure bg-azure/[0.04]' : 'border-ash hover:border-stone'
       } ${a.resolved ? 'opacity-70' : ''}`}
       style={peer && !selected ? { borderColor: peer.color } : undefined}
     >
@@ -226,9 +226,9 @@ const Thread: React.FC<{
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: a.color }} />
           <span className="font-semibold">{TYPE_LABEL[a.type]}</span>
-          <span className="text-[#5f6368]">· Page {a.pageIndex + 1}</span>
+          <span className="text-graphite">· Page {a.pageIndex + 1}</span>
           {peer && (
-            <span className="truncate text-[10px] font-semibold" style={{ color: peer.color }}>
+            <span className="truncate text-caption font-semibold" style={{ color: peer.color }}>
               · {peer.name} is here
             </span>
           )}
@@ -236,7 +236,7 @@ const Thread: React.FC<{
         <div className="flex items-center shrink-0">
           <button
             onClick={(e) => { e.stopPropagation(); onResolve(); }}
-            className="p-1 rounded hover:bg-black/5 text-[#5f6368] hover:text-emerald-700"
+            className="btn btn-ghost h-7 w-7 px-0"
             title={a.resolved ? 'Reopen' : 'Resolve'}
             aria-label={a.resolved ? 'Reopen thread' : 'Resolve thread'}
           >
@@ -244,7 +244,7 @@ const Thread: React.FC<{
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="p-1 rounded hover:bg-black/5 text-[#5f6368] hover:text-red-600"
+            className="btn btn-ghost h-7 w-7 px-0 hover:text-papaya"
             title="Delete markup and its comments"
             aria-label="Delete annotation"
           >
@@ -256,25 +256,25 @@ const Thread: React.FC<{
       {comments.map((c) => (
         <div key={c.id} className="group flex gap-2">
           <span
-            className="w-5 h-5 rounded-full text-[9px] font-bold text-white flex items-center justify-center shrink-0"
-            style={{ backgroundColor: c.createdByColor ?? '#5f6368' }}
+            className="w-6 h-6 rounded-full text-[10px] font-semibold text-white flex items-center justify-center shrink-0"
+            style={{ backgroundColor: c.createdByColor ?? 'var(--color-graphite)' }}
             aria-hidden
           >
             {initials(c.createdBy ?? '?')}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-1.5">
-              <span className="font-semibold truncate">{c.createdBy ?? 'Someone'}</span>
-              {c.createdAt && <span className="text-[10px] text-[#5f6368] shrink-0">{timeAgo(c.createdAt)}</span>}
+              <span className="font-semibold text-ink truncate">{c.createdBy ?? 'Someone'}</span>
+              {c.createdAt && <span className="text-caption text-graphite shrink-0">{timeAgo(c.createdAt)}</span>}
               <button
                 onClick={(e) => { e.stopPropagation(); onDeleteComment(c.id); }}
-                className="ml-auto opacity-0 group-hover:opacity-100 focus:opacity-100 text-[#5f6368] hover:text-red-600"
+                className="ml-auto opacity-0 group-hover:opacity-100 focus:opacity-100 text-graphite hover:text-papaya"
                 aria-label="Delete comment"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
             </div>
-            <p className="whitespace-pre-wrap break-words text-[#1a1c1c]">{c.text}</p>
+            <p className="whitespace-pre-wrap break-words text-ink">{c.text}</p>
           </div>
         </div>
       ))}
@@ -294,7 +294,7 @@ const Thread: React.FC<{
           }}
           placeholder={comments.length ? 'Reply…' : 'Add a comment…'}
           aria-label={comments.length ? 'Reply' : 'Add a comment'}
-          className="w-full resize-none rounded-lg border border-black/10 bg-[#f4f3f2] px-2 py-1.5 outline-none focus:border-[#005db2] focus:bg-white"
+          className="w-full resize-none rounded-xl border border-transparent bg-linen px-3 py-2 text-body-sm outline-none transition-colors focus:border-azure focus:bg-white"
         />
       )}
     </div>

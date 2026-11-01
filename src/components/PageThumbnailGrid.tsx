@@ -61,7 +61,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
     >
       <div
         ref={containerRef}
-        className={`relative shadow-md bg-white transition-transform duration-300 flex items-center justify-center overflow-hidden rounded-md border-2 ${isSelected ? 'border-[#005db2] shadow-lg' : 'border-transparent hover:border-black/10'}`}
+        className={`relative shadow-xl bg-white transition-transform duration-300 flex items-center justify-center overflow-hidden rounded-lg border-2 ${isSelected ? 'border-azure' : 'border-transparent hover:border-ink/10'}`}
       >
         <div
           className="transition-transform duration-300"
@@ -76,8 +76,8 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
               className="pointer-events-none select-none"
             />
           ) : (
-            <div style={{ width: 160, height: 226 }} className="bg-gray-100 flex items-center justify-center">
-              <span className="text-gray-400 text-xs">Loading...</span>
+            <div style={{ width: 160, height: 226 }} className="bg-linen flex items-center justify-center">
+              <span className="text-graphite text-caption">Loading...</span>
             </div>
           )}
         </div>
@@ -86,12 +86,12 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
         <div
           {...attributes}
           {...listeners}
-          className="absolute inset-0 cursor-grab active:cursor-grabbing z-10 hover:bg-black/5"
+          className="absolute inset-0 cursor-grab active:cursor-grabbing z-10 hover:bg-ink/[0.04]"
         />
 
         {/* Selection checkmark */}
         {isSelected && (
-          <div className="absolute top-2 left-2 w-6 h-6 bg-[#005db2] rounded-full text-white flex items-center justify-center shadow-md z-20">
+          <div className="absolute top-2 left-2 w-6 h-6 bg-azure rounded-full text-white flex items-center justify-center shadow-md-3 z-20">
             <Check className="w-3.5 h-3.5" />
           </div>
         )}
@@ -104,7 +104,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 e.stopPropagation();
                 onToggleDelete(originalIndex);
               }}
-              className={`p-1.5 rounded-md pointer-events-auto shadow-sm transition-colors ${isDeleted ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-white/80 text-red-500 hover:bg-red-50'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-full pointer-events-auto shadow-md-3 transition-colors ${isDeleted ? 'bg-papaya text-white' : 'bg-white/90 text-papaya hover:bg-papaya hover:text-white'}`}
               title={isDeleted ? 'Restore page' : 'Delete page'}
             >
               {isDeleted ? <RotateCcwSquare className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
@@ -115,7 +115,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 e.stopPropagation();
                 onToggleSelect(originalIndex);
               }}
-              className={`p-1.5 rounded-md pointer-events-auto shadow-sm transition-colors ${isSelected ? 'bg-[#005db2] text-white hover:bg-[#004a8f]' : 'bg-white/80 text-[#005db2] hover:bg-blue-50'}`}
+              className={`w-8 h-8 flex items-center justify-center rounded-full pointer-events-auto shadow-md-3 transition-colors ${isSelected ? 'bg-azure text-white' : 'bg-white/90 text-azure hover:bg-azure hover:text-white'}`}
               title={isSelected ? 'Deselect page' : 'Select page'}
             >
               <Check className="w-4 h-4" />
@@ -128,7 +128,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 e.stopPropagation();
                 onRotate(originalIndex, 'ccw');
               }}
-              className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-md pointer-events-auto shadow-sm backdrop-blur-sm transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-ink/60 hover:bg-ink/85 text-white rounded-full pointer-events-auto backdrop-blur-sm transition-colors"
               title="Rotate Left"
             >
               <RotateCcw className="w-4 h-4" />
@@ -138,7 +138,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 e.stopPropagation();
                 onRotate(originalIndex, 'cw');
               }}
-              className="p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-md pointer-events-auto shadow-sm backdrop-blur-sm transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-ink/60 hover:bg-ink/85 text-white rounded-full pointer-events-auto backdrop-blur-sm transition-colors"
               title="Rotate Right"
             >
               <RotateCw className="w-4 h-4" />
@@ -147,11 +147,11 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
         </div>
       </div>
 
-      <span className="mt-2 text-[11px] font-mono font-medium text-[#625e5a] bg-white/80 px-2 py-0.5 rounded-md border border-black/5 shadow-2xs">
+      <span className="mt-3 text-caption font-medium tabular-nums text-ink bg-white px-2.5 py-0.5 rounded-full shadow-subtle">
         {displayIndex + 1}
       </span>
       {originalIndex !== displayIndex && (
-        <span className="mt-0.5 text-[9px] text-[#625e5a]/60">
+        <span className="mt-1 text-caption text-graphite">
           (was {originalIndex + 1})
         </span>
       )}

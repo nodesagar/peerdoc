@@ -222,7 +222,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#faf9f8] text-[#1a1c1c] selection:bg-[#005db2]/15 selection:text-[#005db2]">
+    <div className="min-h-screen flex flex-col bg-canvas text-ink">
       {/* Navigation Header with CollaborationBar */}
       <Header
         activeTool={activeTool}

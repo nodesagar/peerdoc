@@ -97,44 +97,44 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
   const onlyRefusals = !accepted && transferLog.at(-1)?.kind === 'unavailable';
 
   return (
-    <div className="max-w-[720px] mx-auto px-4 py-12 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl border border-black/10 shadow-lg p-6 md:p-8 space-y-6 text-center">
+    <div className="max-w-[720px] mx-auto px-4 py-14">
+      <div className="bg-white rounded-3xl shadow-xl p-6 md:p-10 space-y-7 text-center">
         {/* Top Header Badge */}
-        <div className="flex items-center justify-center space-x-2">
+        <div className="flex items-center justify-center">
           {peerCount > 0 ? (
-            <span className="inline-flex items-center space-x-1.5 bg-emerald-50 text-emerald-800 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-200 shadow-2xs">
+            <span className="chip bg-mint py-1 px-3">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ink/40"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
               </span>
               <Users className="w-3.5 h-3.5" />
               <span>{peerCount} {peerCount === 1 ? 'Peer Online' : 'Peers Online'}</span>
             </span>
           ) : (
-            <span className="inline-flex items-center space-x-1.5 bg-amber-50 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full border border-amber-200 shadow-2xs">
+            <span className="chip bg-marigold py-1 px-3">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ink/40"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
               </span>
-              <WifiOff className="w-3.5 h-3.5 text-amber-600" />
+              <WifiOff className="w-3.5 h-3.5" />
               <span>Searching for Peers...</span>
             </span>
           )}
         </div>
 
         {/* Dynamic Center Illustration & Status */}
-        <div className="space-y-3">
-          <div className="relative w-16 h-16 rounded-2xl bg-[#005db2]/10 text-[#005db2] flex items-center justify-center mx-auto shadow-inner">
+        <div className="space-y-4">
+          <div className="relative w-16 h-16 rounded-2xl bg-periwinkle text-ink flex items-center justify-center mx-auto">
             {isTransferring ? (
-              <Loader2 className="w-8 h-8 animate-spin text-[#005db2]" />
+              <Loader2 className="w-8 h-8 animate-spin" />
             ) : peerCount > 0 ? (
-              <Users className="w-8 h-8 text-[#005db2]" />
+              <Users className="w-8 h-8" />
             ) : (
-              <Wifi className="w-8 h-8 text-[#005db2] animate-pulse" />
+              <Wifi className="w-8 h-8 animate-pulse" />
             )}
           </div>
 
-          <h2 className="text-xl md:text-2xl font-bold text-[#1a1c1c] tracking-tight">
+          <h2 className="font-serif text-subheading md:text-heading-sm text-ink text-balance">
             {isTransferring
               ? `Transferring Document (${pdfProgress}%)`
               : accepted
@@ -144,7 +144,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               : 'Connecting to Document Room'}
           </h2>
 
-          <p className="text-xs md:text-sm text-[#5f6368] max-w-md mx-auto leading-relaxed">
+          <p className="text-body-sm md:text-body text-graphite max-w-md mx-auto">
             {isTransferring
               ? 'Receiving binary PDF chunks directly from your peer over WebRTC. The document will open automatically once verified.'
               : accepted
@@ -161,17 +161,17 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
 
         {/* Troubleshooting / Explanation Card when peerCount === 0 */}
         {peerCount === 0 && (
-          <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 text-left text-xs text-amber-900 space-y-2">
-            <div className="font-semibold flex items-center space-x-1.5 text-amber-950">
-              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+          <div className="bg-marigold/45 rounded-2xl p-4 md:p-5 text-left text-body-sm text-ink space-y-2">
+            <div className="font-semibold flex items-center gap-2">
+              <Info className="w-4 h-4 shrink-0" />
               <span>Why is peer discovery waiting?</span>
             </div>
-            <ul className="list-disc list-inside space-y-1 text-amber-800 text-[11px] leading-relaxed">
-              <li><strong>Host must be active:</strong> The host who uploaded this document must have EditorDoc open in their browser.</li>
+            <ul className="list-disc list-inside space-y-1 text-graphite text-caption">
+              <li><strong className="text-ink">Host must be active:</strong> The host who uploaded this document must have EditorDoc open in their browser.</li>
               {isLocalhost && (
-                <li><strong>Testing between 2 devices?</strong> <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">localhost</code> only works on this computer. Use your Wi-Fi IP address (e.g. <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">http://192.168.x.x:3000/?doc=...</code>) or test with another browser window on this machine.</li>
+                <li><strong className="text-ink">Testing between 2 devices?</strong> <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">localhost</code> only works on this computer. Use your Wi-Fi IP address (e.g. <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">http://192.168.x.x:3000/?doc=...</code>) or test with another browser window on this machine.</li>
               )}
-              <li><strong>Ad-blockers / Firewall:</strong> Brave Shields or ad-blockers can block WebTorrent/WebRTC trackers. Try pausing them or test on the same network.</li>
+              <li><strong className="text-ink">Ad-blockers / Firewall:</strong> Brave Shields or ad-blockers can block WebTorrent/WebRTC trackers. Try pausing them or test on the same network.</li>
             </ul>
           </div>
         )}
@@ -179,33 +179,33 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
         {/* Progress Bar (Visible during chunk transfer) */}
         {isTransferring && (
           <div className="max-w-md mx-auto space-y-2">
-            <div className="w-full bg-black/5 rounded-full h-3 overflow-hidden p-0.5 border border-black/10">
+            <div className="w-full bg-cloud rounded-full h-2.5 overflow-hidden">
               <div
-                className="bg-[#005db2] h-full rounded-full transition-all duration-300 ease-out"
+                className="bg-ink h-full rounded-full transition-all duration-300 ease-out"
                 style={{ width: `${Math.max(5, pdfProgress)}%` }}
               />
             </div>
-            <div className="flex justify-between text-[11px] font-mono text-[#5f6368]">
+            <div className="flex justify-between text-caption text-graphite tabular-nums">
               <span>Receiving P2P Chunks</span>
-              <span className="font-bold text-[#005db2]">{pdfProgress}%</span>
+              <span className="font-semibold text-ink">{pdfProgress}%</span>
             </div>
           </div>
         )}
 
         {/* Request / transfer status */}
         {transferLog.length > 0 && (
-          <div className="max-w-md mx-auto text-left bg-[#f4f3f2] rounded-xl border border-black/5 p-3 space-y-1.5" aria-live="polite">
-            <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6368]">PDF request status</div>
-            <ul className="space-y-1">
+          <div className="max-w-md mx-auto text-left bg-linen rounded-2xl p-4 space-y-2" aria-live="polite">
+            <div className="eyebrow">PDF request status</div>
+            <ul className="space-y-1.5">
               {transferLog.map((e, i) => {
                 const { text, tone } = describe(e);
                 const Icon = tone === 'ok' ? (e.kind === 'received' ? CheckCircle2 : Send) : tone === 'warn' ? (e.kind === 'verify-failed' ? XCircle : AlertTriangle) : RefreshCw;
-                const color = tone === 'ok' ? 'text-emerald-700' : tone === 'warn' ? 'text-amber-700' : 'text-[#414753]';
+                const color = tone === 'warn' ? 'text-papaya' : tone === 'ok' ? 'text-ink' : 'text-graphite';
                 return (
-                  <li key={i} className={`flex items-start gap-2 text-[11px] leading-snug ${color}`}>
-                    <Icon className="w-3.5 h-3.5 mt-px shrink-0" />
+                  <li key={i} className={`flex items-start gap-2 text-caption ${tone === 'info' ? 'text-graphite' : 'text-ink'}`}>
+                    <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${color}`} />
                     <span className="flex-1">{text}</span>
-                    <span className="font-mono text-black/40 shrink-0">{new Date(e.at).toLocaleTimeString()}</span>
+                    <span className="text-graphite/70 tabular-nums shrink-0">{new Date(e.at).toLocaleTimeString()}</span>
                   </li>
                 );
               })}
@@ -214,11 +214,11 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
         )}
 
         {/* Room ID Card */}
-        <div className="bg-[#f4f3f2] rounded-xl p-3 max-w-md mx-auto border border-black/5 space-y-2">
-          <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6368]">
+        <div className="bg-linen rounded-2xl p-4 max-w-md mx-auto space-y-2">
+          <div className="eyebrow">
             Document ID (SHA-256)
           </div>
-          <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-black/10 font-mono text-xs text-[#1a1c1c]">
+          <div className="flex items-center justify-between bg-white rounded-xl px-3 py-2 ring-1 ring-ash font-mono text-caption text-ink">
             <span className="truncate mr-2 font-medium" title={cleanId}>
               {shortId}
             </span>
@@ -226,13 +226,13 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
         </div>
 
         {/* Action Controls & Instant Fallbacks */}
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
           <button
             onClick={handleManualRequest}
             disabled={isRequesting}
-            className="inline-flex items-center justify-center space-x-2 bg-[#005db2] hover:bg-[#004a8f] text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+            className="btn btn-primary"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRequesting ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isRequesting ? 'animate-spin' : ''}`} />
             <span>{isRequesting ? 'Requesting...' : 'Request PDF from Peers'}</span>
           </button>
 
@@ -240,10 +240,10 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center justify-center space-x-2 bg-white hover:bg-black/5 text-[#1a1c1c] border border-black/15 text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                className="btn btn-secondary"
                 title="If you already have this PDF file locally, upload it to match the room ID immediately"
               >
-                <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                <Upload className="w-4 h-4" />
                 <span>Open Matching Local PDF</span>
               </button>
               <input
@@ -260,10 +260,10 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
             <>
               <button
                 onClick={() => syncFileInputRef.current?.click()}
-                className="inline-flex items-center justify-center space-x-2 bg-white hover:bg-black/5 text-[#1a1c1c] border border-black/15 text-xs font-semibold px-4 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                className="btn btn-secondary"
                 title="Import .cdsync file if direct WebRTC cannot connect"
               >
-                <FolderSync className="w-3.5 h-3.5 text-[#005db2]" />
+                <FolderSync className="w-4 h-4" />
                 <span>Import .cdsync File</span>
               </button>
               <input
@@ -279,9 +279,9 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
           {onReturnToDashboard && (
             <button
               onClick={onReturnToDashboard}
-              className="inline-flex items-center justify-center space-x-1 text-xs text-[#5f6368] hover:text-[#1a1c1c] px-3 py-2 rounded-xl transition-colors cursor-pointer"
+              className="btn btn-ghost"
             >
-              <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+              <ArrowLeft className="w-4 h-4" />
               <span>Dashboard</span>
             </button>
           )}
