@@ -662,21 +662,18 @@ export async function splitPDF(
 export async function extractPDFMetadata(pdfBuffer: Uint8Array): Promise<PDFMetadataInfo> {
   try {
     const pdfDoc = await PDFDocument.load(pdfBuffer, { ignoreEncryption: true });
+    // Only what the file actually holds: an empty field shows as "None", never an invented value
     return {
-      title: pdfDoc.getTitle() || 'Untitled Document',
-      author: pdfDoc.getAuthor() || 'Unknown Author',
-      subject: pdfDoc.getSubject() || 'None',
-      creator: pdfDoc.getCreator() || 'Unknown',
-      producer: pdfDoc.getProducer() || 'EditorDoc P2P Client',
-      creationDate: pdfDoc.getCreationDate()?.toLocaleDateString() || 'N/A',
-      modificationDate: pdfDoc.getModificationDate()?.toLocaleDateString() || 'N/A',
+      title: pdfDoc.getTitle(),
+      author: pdfDoc.getAuthor(),
+      subject: pdfDoc.getSubject(),
+      creator: pdfDoc.getCreator(),
+      producer: pdfDoc.getProducer(),
+      creationDate: pdfDoc.getCreationDate()?.toLocaleDateString(),
+      modificationDate: pdfDoc.getModificationDate()?.toLocaleDateString(),
     };
-  } catch (err) {
-    return {
-      title: 'Uploaded Document',
-      author: 'Unknown',
-      producer: 'EditorDoc P2P Browser Engine',
-    };
+  } catch {
+    return {}; // unreadable metadata: every field shows "None"
   }
 }
 
