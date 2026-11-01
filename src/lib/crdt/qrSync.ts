@@ -1,8 +1,8 @@
 import * as Y from 'yjs';
 
 export const QR_FRAME_PREFIX = 'CD1';
-export const DEFAULT_CHUNK_SIZE = 500;
-export const MAX_QR_FRAMES = 30;
+export const DEFAULT_CHUNK_SIZE = 160;
+export const MAX_QR_FRAMES = 45;
 
 export interface FrameAddResult {
   progress: number;
@@ -122,11 +122,14 @@ export async function buildFrames(
   const b64 = uint8ToBase64Url(compressed);
 
   const chunks: string[] = [];
-  for (let i = 0; i < b64.length; i += chunkSize) {
-    chunks.push(b64.slice(i, i + chunkSize));
-  }
-  if (chunks.length === 0) {
+  if (b64.length === 0) {
     chunks.push('');
+  } else {
+    const totalFrames = Math.max(1, Math.ceil(b64.length / chunkSize));
+    const balancedSize = Math.max(1, Math.ceil(b64.length / totalFrames));
+    for (let i = 0; i < b64.length; i += balancedSize) {
+      chunks.push(b64.slice(i, i + balancedSize));
+    }
   }
 
   const total = chunks.length;
@@ -173,6 +176,10 @@ export class FrameCollector {
 
   get currentSessionId(): string | null {
     return this.sessionId;
+  }
+
+  get receivedIndices(): number[] {
+    return Array.from(this.chunks.keys()).sort((a, b) => a - b);
   }
 
   add(frameString: string): FrameAddResult {

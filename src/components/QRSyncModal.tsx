@@ -3,7 +3,16 @@ import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import QRCode from 'qrcode';
 import jsQR from 'jsqr';
-import { QrCode, Camera, ArrowLeftRight, Check, AlertCircle, X } from 'lucide-react';
+import {
+  QrCode,
+  Camera,
+  ArrowLeftRight,
+  Check,
+  AlertCircle,
+  X,
+  Pause,
+  Play,
+} from 'lucide-react';
 import {
   buildFrames,
   FrameCollector,
@@ -19,6 +28,22 @@ interface QRSyncModalProps {
 }
 
 type TabMode = 'send' | 'receive';
+
+interface NativeBarcodeDetector {
+  detect(source: ImageBitmapSource): Promise<Array<{ rawValue?: string }>>;
+}
+
+declare global {
+  interface Window {
+    BarcodeDetector?: {
+      new (options?: { formats?: string[] }): NativeBarcodeDetector;
+    };
+  }
+}
+
+const SEND_FRAME_INTERVAL_MS = 350;
+const SCAN_TICK_MS = 80;
+const MAX_SCAN_DIM = 600;
 
 function formatByteSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -36,6 +61,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
   // Send state
   const [frames, setFrames] = useState<string[]>([]);
   const [frameIndex, setFrameIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const [updateByteLength, setUpdateByteLength] = useState(0);
   const [sendError, setSendError] = useState<string | null>(null);
   const [stateHash, setStateHash] = useState<string>('');
@@ -44,6 +70,8 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
   // Receive state
   const [receivedCount, setReceivedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [receivedIndices, setReceivedIndices] = useState<number[]>([]);
+  const [lastScannedIndex, setLastScannedIndex] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [mergedHash, setMergedHash] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -74,8 +102,11 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
       setTab('send');
       setFrames([]);
       setFrameIndex(0);
+      setIsPaused(false);
       setReceivedCount(0);
       setTotalCount(0);
+      setReceivedIndices([]);
+      setLastScannedIndex(null);
       setProgress(0);
       setMergedHash(null);
       setCameraError(null);
@@ -100,6 +131,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
         setUpdateByteLength(rawUpdate.byteLength);
         setFrames(built);
         setFrameIndex(0);
+        setIsPaused(false);
         setStateHash(hash);
       } catch (err) {
         if (cancelled) return;
@@ -112,18 +144,24 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
     };
   }, [isOpen, tab, doc, documentId]);
 
-  // Cycle frames at ~4 fps (250 ms) on the Send tab
+  // Cycle frames on the Send tab unless paused
   useEffect(() => {
-    if (!isOpen || tab !== 'send' || frames.length <= 1 || frames.length > MAX_QR_FRAMES) {
+    if (
+      !isOpen ||
+      tab !== 'send' ||
+      isPaused ||
+      frames.length <= 1 ||
+      frames.length > MAX_QR_FRAMES
+    ) {
       return;
     }
     const timer = window.setInterval(() => {
       setFrameIndex((prev) => (prev + 1) % frames.length);
-    }, 250);
+    }, SEND_FRAME_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [isOpen, tab, frames]);
+  }, [isOpen, tab, isPaused, frames]);
 
-  // Render current QR frame onto canvas
+  // Render current QR frame onto canvas (errorCorrectionLevel: 'L', large size & margin)
   useEffect(() => {
     if (!isOpen || tab !== 'send' || frames.length === 0 || frames.length > MAX_QR_FRAMES) {
       return;
@@ -134,10 +172,10 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
 
     QRCode.toCanvas(canvas, frame, {
       errorCorrectionLevel: 'L',
-      width: 240,
-      margin: 2,
+      width: 280,
+      margin: 3,
       color: {
-        dark: '#141413',
+        dark: '#000000',
         light: '#FFFFFF',
       },
     }).catch((err) => {
@@ -145,7 +183,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
     });
   }, [isOpen, tab, frames, frameIndex]);
 
-  // Manage camera & 150 ms jsQR scan loop on the Receive tab
+  // Manage camera & non-overlapping scan loop on the Receive tab
   useEffect(() => {
     if (!isOpen || tab !== 'receive' || !doc || !documentId) {
       stopCamera();
@@ -154,10 +192,14 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
 
     let cancelled = false;
     let scanTimer: number | null = null;
+    let tickCount = 0;
+
     finishingRef.current = false;
     collectorRef.current = new FrameCollector(documentId);
     setReceivedCount(0);
     setTotalCount(0);
+    setReceivedIndices([]);
+    setLastScannedIndex(null);
     setProgress(0);
     setMergedHash(null);
     setCameraError(null);
@@ -170,10 +212,91 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
       return;
     }
 
+    let nativeDetector: NativeBarcodeDetector | null = null;
+    if (typeof window !== 'undefined' && window.BarcodeDetector) {
+      try {
+        nativeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch {
+        nativeDetector = null;
+      }
+    }
+
+    const scheduleNextTick = (fn: () => void) => {
+      if (!cancelled && !finishingRef.current) {
+        scanTimer = window.setTimeout(fn, SCAN_TICK_MS);
+      }
+    };
+
+    const handleDecodedString = async (raw: string): Promise<boolean> => {
+      const collector = collectorRef.current;
+      if (!collector || finishingRef.current || cancelled) return false;
+
+      const rawFrame = raw.trim();
+      if (!rawFrame) return false;
+
+      let res = collector.add(rawFrame);
+
+      // If the sender started a new session, reset the collector and accept the new session
+      if (res.error && res.error.startsWith('Different session ID')) {
+        collector.reset();
+        res = collector.add(rawFrame);
+      }
+
+      if (res.error) {
+        setScanHint(res.error);
+        return false;
+      }
+
+      const parts = rawFrame.split('|');
+      const parsedIndex = parts.length === 6 ? Number(parts[3]) : NaN;
+      if (Number.isInteger(parsedIndex)) {
+        setLastScannedIndex(parsedIndex);
+      }
+
+      setScanHint(null);
+      setReceivedCount(res.received);
+      setTotalCount(res.total);
+      setReceivedIndices(collector.receivedIndices);
+      setProgress(res.progress);
+
+      if (res.complete) {
+        finishingRef.current = true;
+        stopCamera();
+        try {
+          const updateBytes = await collector.finish();
+          Y.applyUpdate(doc, updateBytes, 'qr');
+          const hash = await computeDocStateHash(doc);
+          if (!cancelled) {
+            setMergedHash(hash);
+            setStateHash(hash);
+          }
+          return true;
+        } catch (err) {
+          if (!cancelled) {
+            setScanHint(
+              err instanceof Error ? err.message : 'Failed to decode QR sync payload'
+            );
+            collector.reset();
+            setReceivedCount(0);
+            setReceivedIndices([]);
+            setProgress(0);
+            finishingRef.current = false;
+          }
+          return false;
+        }
+      }
+
+      return false;
+    };
+
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -185,68 +308,100 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
           await videoRef.current.play().catch(() => {});
         }
 
-        scanTimer = window.setInterval(async () => {
+        const scanTick = async () => {
           if (cancelled || finishingRef.current) return;
           const video = videoRef.current;
           const canvas = scanCanvasRef.current;
-          const collector = collectorRef.current;
-          if (!video || !canvas || !collector) return;
-          if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth === 0) {
+
+          if (
+            !video ||
+            !canvas ||
+            video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+            video.videoWidth === 0 ||
+            video.videoHeight === 0
+          ) {
+            scheduleNextTick(scanTick);
             return;
           }
 
-          const width = video.videoWidth;
-          const height = video.videoHeight;
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          if (!ctx) return;
+          tickCount++;
+          let foundAny = false;
 
-          ctx.drawImage(video, 0, 0, width, height);
-          const imageData = ctx.getImageData(0, 0, width, height);
-          const code = jsQR(imageData.data, width, height, {
-            inversionAttempts: 'dontInvert',
-          });
-
-          if (!code || !code.data) return;
-
-          const res = collector.add(code.data);
-          if (res.error) {
-            setScanHint(res.error);
-            return;
-          }
-
-          setScanHint(null);
-          setReceivedCount(res.received);
-          setTotalCount(res.total);
-          setProgress(res.progress);
-
-          if (res.complete) {
-            finishingRef.current = true;
-            if (scanTimer !== null) {
-              window.clearInterval(scanTimer);
-              scanTimer = null;
-            }
-            stopCamera();
+          // 1. Hardware-accelerated native BarcodeDetector (Android Chrome / iOS 17+ / macOS)
+          if (nativeDetector) {
             try {
-              const updateBytes = await collector.finish();
-              Y.applyUpdate(doc, updateBytes, 'qr');
-              const hash = await computeDocStateHash(doc);
-              if (!cancelled) {
-                setMergedHash(hash);
-                setStateHash(hash);
+              const barcodes = await nativeDetector.detect(video);
+              for (const b of barcodes) {
+                if (b.rawValue) {
+                  foundAny = true;
+                  const done = await handleDecodedString(b.rawValue);
+                  if (done) return;
+                }
               }
-            } catch (err) {
-              if (!cancelled) {
-                setScanHint(
-                  err instanceof Error ? err.message : 'Failed to decode QR sync payload'
+            } catch {
+              // Fall through to jsQR
+            }
+          }
+
+          // 2. Software jsQR fallback on scaled full frame + center square crop
+          if (!foundAny && !finishingRef.current && !cancelled) {
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            const scale = Math.min(1, MAX_SCAN_DIM / Math.max(vw, vh));
+            const targetW = Math.max(1, Math.round(vw * scale));
+            const targetH = Math.max(1, Math.round(vh * scale));
+
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+              canvas.width = targetW;
+              canvas.height = targetH;
+            }
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(video, 0, 0, vw, vh, 0, 0, targetW, targetH);
+              const imageData = ctx.getImageData(0, 0, targetW, targetH);
+              let code = jsQR(imageData.data, targetW, targetH, {
+                inversionAttempts: 'attemptBoth',
+              });
+
+              // On odd ticks, if full frame didn't match, try a center square crop (optical zoom)
+              if ((!code || !code.data) && tickCount % 2 === 1) {
+                const minDim = Math.min(vw, vh);
+                const cropDim = Math.floor(minDim * 0.7);
+                const sx = Math.floor((vw - cropDim) / 2);
+                const sy = Math.floor((vh - cropDim) / 2);
+                const cropCanvasSize = Math.min(480, cropDim);
+                if (canvas.width !== cropCanvasSize || canvas.height !== cropCanvasSize) {
+                  canvas.width = cropCanvasSize;
+                  canvas.height = cropCanvasSize;
+                }
+                ctx.drawImage(
+                  video,
+                  sx,
+                  sy,
+                  cropDim,
+                  cropDim,
+                  0,
+                  0,
+                  cropCanvasSize,
+                  cropCanvasSize
                 );
-                collector.reset();
-                finishingRef.current = false;
+                const cropData = ctx.getImageData(0, 0, cropCanvasSize, cropCanvasSize);
+                code = jsQR(cropData.data, cropCanvasSize, cropCanvasSize, {
+                  inversionAttempts: 'attemptBoth',
+                });
+              }
+
+              if (code && code.data) {
+                const done = await handleDecodedString(code.data);
+                if (done) return;
               }
             }
           }
-        }, 150);
+
+          scheduleNextTick(scanTick);
+        };
+
+        scheduleNextTick(scanTick);
       } catch (err) {
         if (cancelled) return;
         const isDenied =
@@ -263,7 +418,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
     return () => {
       cancelled = true;
       if (scanTimer !== null) {
-        window.clearInterval(scanTimer);
+        window.clearTimeout(scanTimer);
       }
       stopCamera();
     };
@@ -360,21 +515,68 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
                 <div className="p-3 rounded-2xl bg-white ring-1 ring-ink/10 shadow-xs flex items-center justify-center">
                   <canvas
                     ref={qrCanvasRef}
-                    width={240}
-                    height={240}
-                    className="w-[240px] h-[240px] block"
+                    width={280}
+                    height={280}
+                    style={{ imageRendering: 'pixelated' }}
+                    className="w-[260px] h-[260px] sm:w-[280px] sm:h-[280px] block"
                   />
                 </div>
                 <div className="text-center space-y-0.5">
-                  <p className="text-body-sm font-medium text-ink font-mono">
-                    Frame {frames.length > 0 ? frameIndex + 1 : 0} / {frames.length}
-                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-body-sm font-medium text-ink font-mono">
+                      Frame {frames.length > 0 ? frameIndex + 1 : 0} / {frames.length}
+                    </p>
+                    {frames.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsPaused((p) => !p)}
+                        className="btn btn-ghost h-6 px-2 text-[11px] gap-1"
+                        title={isPaused ? 'Resume cycling frames' : 'Pause on current frame'}
+                      >
+                        {isPaused ? (
+                          <>
+                            <Play className="w-3 h-3" />
+                            <span>Play</span>
+                          </>
+                        ) : (
+                          <>
+                            <Pause className="w-3 h-3" />
+                            <span>Pause</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
                   <p className="text-caption text-graphite">
                     {formatByteSize(updateByteLength)}, {frames.length}{' '}
                     {frames.length === 1 ? 'frame' : 'frames'}
                     {stateHash ? ` · State ${stateHash}` : ''}
                   </p>
                 </div>
+
+                {/* Clickable frame selector pills so user can also jump to any missing frame */}
+                {frames.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-center gap-1 pt-0.5">
+                    {frames.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setFrameIndex(idx);
+                          setIsPaused(true);
+                        }}
+                        className={`h-6 min-w-6 px-1.5 rounded-lg text-[11px] font-mono transition-colors ${
+                          idx === frameIndex
+                            ? 'bg-ink text-white font-semibold'
+                            : 'bg-linen text-graphite hover:text-ink'
+                        }`}
+                        title={`Show Frame ${idx + 1} (pauses auto-cycle)`}
+                      >
+                        {idx + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -415,7 +617,9 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
                   <div className="flex items-center justify-between text-caption text-graphite">
                     <span>
                       {totalCount > 0
-                        ? `Scanning frames (${receivedCount} / ${totalCount})`
+                        ? `Scanning frames (${receivedCount} / ${totalCount})${
+                            lastScannedIndex !== null ? ` · read #${lastScannedIndex + 1}` : ''
+                          }`
                         : 'Point camera at the sender’s QR code…'}
                     </span>
                     <span className="font-mono">{Math.round(progress * 100)}%</span>
@@ -427,6 +631,27 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Visual checklist of which frames have been captured vs missing */}
+                {totalCount > 1 && (
+                  <div className="flex flex-wrap items-center justify-center gap-1">
+                    {Array.from({ length: totalCount }, (_, idx) => {
+                      const captured = receivedIndices.includes(idx);
+                      return (
+                        <span
+                          key={idx}
+                          className={`h-6 min-w-7 px-1.5 rounded-lg text-[11px] font-mono inline-flex items-center justify-center gap-0.5 ${
+                            captured
+                              ? 'bg-mint text-ink font-semibold'
+                              : 'bg-linen text-graphite'
+                          }`}
+                        >
+                          {captured ? `✓${idx + 1}` : idx + 1}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {scanHint && (
                   <p className="text-caption text-papaya text-center" role="alert">
@@ -461,4 +686,3 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
     document.body
   );
 };
-
