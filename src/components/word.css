@@ -1,0 +1,244 @@
+/* Word document surface. Page geometry and document styles are set inline / injected per document. */
+@import 'prosemirror-view/style/prosemirror.css';
+@import 'prosemirror-tables/style/tables.css';
+@import 'prosemirror-gapcursor/style/gapcursor.css';
+
+.wd-sheet {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  margin: 0 auto;
+  background: #fff;
+  color: #000;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 28px rgb(0 0 0 / 0.08);
+}
+.wd-body {
+  flex: 1;
+}
+
+.wd-doc {
+  outline: none;
+  font-family: 'Times New Roman', Tinos, serif;
+  font-size: 10pt;
+  line-height: 1.15;
+  color: #000;
+  tab-size: 48px; /* Word's default tab stops every 0.5" */
+  font-kerning: normal;
+  overflow-wrap: break-word;
+  caret-color: #000;
+}
+.wd-doc .wd-p {
+  margin: 0;
+}
+.wd-doc a {
+  color: #0563c1;
+  text-decoration: underline;
+}
+.wd-doc img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
+.wd-marker {
+  display: inline-block;
+  text-indent: 0;
+  white-space: pre;
+  user-select: none;
+}
+.wd-tab {
+  white-space: pre;
+}
+.wd-pagebreak {
+  display: block;
+  position: relative;
+  height: 0;
+  margin: 14px 0;
+  border-top: 1px dashed #b4b4b4;
+  text-indent: 0;
+}
+.wd-pagebreak::after {
+  content: attr(data-type) ' break';
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: #fff;
+  color: #8a8a8a;
+  font: 500 10px/16px Inter, system-ui, sans-serif;
+  text-transform: capitalize;
+}
+.wd-raw {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #eef1f4;
+  color: #5b6168;
+  font-size: 0.85em;
+  text-indent: 0;
+}
+.wd-raw-hidden {
+  display: none;
+}
+.wd-raw-img {
+  display: inline-block;
+  max-width: 100%;
+}
+.wd-raw-block {
+  margin: 4px 0;
+  padding: 6px 10px;
+  border: 1px dashed #c9ced4;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #5b6168;
+  font: 12px/1.4 Inter, system-ui, sans-serif;
+  user-select: none;
+}
+.wd-doc .ProseMirror-selectednode.wd-raw-block,
+.wd-doc .ProseMirror-selectednode.wd-raw {
+  outline: 2px solid #0087ff;
+}
+
+/* Pictures */
+.wd-img {
+  display: inline-block;
+  position: relative;
+  line-height: 0;
+  vertical-align: bottom;
+  text-indent: 0;
+}
+.wd-img.ProseMirror-selectednode {
+  outline: 2px solid #0087ff;
+  outline-offset: 1px;
+}
+.wd-img-handle {
+  display: none;
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: #0087ff;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.wd-img.ProseMirror-selectednode .wd-img-handle {
+  display: block;
+}
+.wd-img-missing img {
+  background: repeating-linear-gradient(45deg, #f1f3f5 0 8px, #e6e9ed 8px 16px);
+}
+
+/* Tables: Word draws no lines unless the table has borders; show light gridlines on screen */
+.wd-doc table {
+  margin: 0;
+  max-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.wd-doc td {
+  padding: 0 7.2px;
+  vertical-align: top;
+  border: 1px dashed #d5dae0;
+}
+.wd-doc table.wd-bordered td {
+  border: 1px solid #000;
+}
+/* Word lets tables run into the page margins (negative indents, floating offsets): never clip them */
+.wd-doc .tableWrapper {
+  margin: 0;
+  overflow: visible;
+}
+.wd-doc .tableWrapper table {
+  overflow: visible;
+}
+
+/* Header and footer read as quieter until you work in them, as in Word */
+.wd-hf {
+  position: relative;
+  transition: opacity 0.15s ease;
+}
+.wd-hf:not(:focus-within) {
+  opacity: 0.6;
+}
+.wd-hf:focus-within::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e8f0fe;
+  color: #1a56c4;
+  font: 600 10px/14px Inter, system-ui, sans-serif;
+}
+.wd-hf[data-label='Header']:focus-within::after {
+  bottom: -18px;
+}
+.wd-hf[data-label='Footer']:focus-within::after {
+  top: -18px;
+}
+
+/* Collaborators' carets (y-prosemirror) */
+.ProseMirror-yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: 1px solid;
+  word-break: normal;
+  pointer-events: none;
+  text-indent: 0;
+}
+.ProseMirror-yjs-cursor > div {
+  position: absolute;
+  top: -1.3em;
+  left: -1px;
+  padding: 0 5px;
+  border-radius: 4px 4px 4px 0;
+  color: #fff;
+  font: 600 10px/1.5 Inter, system-ui, sans-serif;
+  white-space: nowrap;
+  user-select: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .wd-sheet,
+  .wd-sheet * {
+    visibility: visible;
+  }
+  .wd-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-shadow: none;
+    zoom: 1 !important;
+    min-height: 0 !important;
+  }
+  .wd-hf {
+    opacity: 1 !important;
+  }
+  .wd-hf::after,
+  .ProseMirror-yjs-cursor,
+  .wd-img-handle {
+    display: none !important;
+  }
+  .wd-doc td {
+    border-color: transparent;
+  }
+  .wd-doc table.wd-bordered td {
+    border-color: #000;
+  }
+  .wd-pagebreak {
+    border: 0;
+    margin: 0;
+    break-after: page;
+  }
+  .wd-pagebreak::after {
+    content: none;
+  }
+}

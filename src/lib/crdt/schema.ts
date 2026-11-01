@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { ySyncPluginKey } from 'y-prosemirror';
 import { generateFractionalIndex, generateInitialIndices } from './fractionalIndex';
 import { Annotation, ThreadComment, Attribution, PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
 
@@ -7,6 +8,8 @@ export interface DocumentSnapshot {
     documentId: string;
     title: string;
     createdAt: number;
+    /** 'word' for Word documents; absent (PDF) for rooms created before formats existed */
+    format?: string;
   };
   pages: PageMetadata[];
   textOverlays: TextOverlay[];
@@ -49,25 +52,33 @@ export function getCommentsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
   return doc.getMap('comments');
 }
 
+/** Body of a Word document (y-prosemirror fragment). Headers/footers use `word:<part path>`. */
+export const WORD_BODY = 'word:body';
+
 /**
  * Undo/redo for this user's edits only. Local mutations use origin null (the
- * UndoManager default); peer updates ('p2p'), IndexedDB loads, .cdsync imports
+ * UndoManager default) and Word editor edits come from y-prosemirror
+ * (ySyncPluginKey); peer updates ('p2p'), IndexedDB loads, .cdsync imports
  * ('file-sync') and seeding (SEED_ORIGIN) carry other origins and are skipped.
  */
 export function createUndoManager(doc: Y.Doc): Y.UndoManager {
-  return new Y.UndoManager([
-    getPagesMap(doc),
-    getTextOverlaysMap(doc),
-    getWhiteoutsMap(doc),
-    getRedactionsMap(doc),
-    getSignaturesMap(doc),
-    getAnnotationsMap(doc),
-    getCommentsMap(doc),
-  ]);
+  return new Y.UndoManager(
+    [
+      getPagesMap(doc),
+      getTextOverlaysMap(doc),
+      getWhiteoutsMap(doc),
+      getRedactionsMap(doc),
+      getSignaturesMap(doc),
+      getAnnotationsMap(doc),
+      getCommentsMap(doc),
+      doc.getXmlFragment(WORD_BODY),
+    ],
+    { trackedOrigins: new Set([null, ySyncPluginKey]) }
+  );
 }
 
 /** FNV-1a 32-bit; stable non-zero Yjs client ID derived from the document ID. */
-function seedClientId(documentId: string): number {
+export function seedClientId(documentId: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < documentId.length; i++) {
     h ^= documentId.charCodeAt(i);
@@ -130,6 +141,20 @@ export function initializeDocument(
 }
 
 /**
+ * Seed a Word document from its deterministic import (see word/seed.ts). Peers
+ * that import the same file independently produce identical structs, so the
+ * seeds merge as a no-op instead of duplicating the text.
+ */
+export function initializeWordDocument(doc: Y.Doc, title: string, seedUpdate: Uint8Array) {
+  if (doc.getXmlFragment(WORD_BODY).length === 0) Y.applyUpdate(doc, seedUpdate, SEED_ORIGIN);
+  doc.transact(() => {
+    const meta = getMetaMap(doc);
+    if (!meta.has('title')) meta.set('title', title);
+    if (!meta.has('createdAt')) meta.set('createdAt', Date.now());
+  }, SEED_ORIGIN);
+}
+
+/**
  * Read the current reactive or static snapshot of the document.
  */
 export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
@@ -138,6 +163,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
     documentId: (metaMap.get('documentId') as string) || '',
     title: (metaMap.get('title') as string) || 'Untitled Document',
     createdAt: (metaMap.get('createdAt') as number) || 0,
+    ...(typeof metaMap.get('format') === 'string' ? { format: metaMap.get('format') as string } : {}),
   };
 
   // 1. Pages (sorted by order, filter deleted if needed for viewing)

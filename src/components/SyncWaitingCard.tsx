@@ -17,19 +17,20 @@ import {
 } from 'lucide-react';
 import type { TransferLogEntry } from '../hooks/useCRDTSync';
 import { formatBytes } from '../utils/pdfProcessor';
+import { OPEN_ACCEPT } from '../lib/formats';
 
 function describe(e: TransferLogEntry): { text: string; tone: 'info' | 'ok' | 'warn' } {
   switch (e.kind) {
     case 'requested':
-      return { text: `Asked ${e.peers} ${e.peers === 1 ? 'peer' : 'peers'} for the PDF via ${e.routes.join(' + ')}`, tone: 'info' };
+      return { text: `Asked ${e.peers} ${e.peers === 1 ? 'peer' : 'peers'} for the file via ${e.routes.join(' + ')}`, tone: 'info' };
     case 'offered':
       return { text: `Request accepted by peer ${e.peer}: sending ${formatBytes(e.bytes)} in ${e.totalChunks} chunks via ${e.route}`, tone: 'ok' };
     case 'unavailable':
-      return { text: `Peer ${e.peer} (${e.route}) doesn't have the PDF either; still asking others`, tone: 'warn' };
+      return { text: `Peer ${e.peer} (${e.route}) doesn't have the file either; still asking others`, tone: 'warn' };
     case 'verify-failed':
       return { text: `Received data failed verification (${e.reason}); requesting again`, tone: 'warn' };
     case 'received':
-      return { text: `PDF received and verified (${formatBytes(e.bytes)})`, tone: 'ok' };
+      return { text: `File received and verified (${formatBytes(e.bytes)})`, tone: 'ok' };
     default:
       return { text: '', tone: 'info' };
   }
@@ -146,15 +147,15 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
 
           <p className="text-body-sm md:text-body text-graphite max-w-md mx-auto">
             {isTransferring
-              ? 'Receiving binary PDF chunks directly from your peer over WebRTC. The document will open automatically once verified.'
+              ? 'Receiving file chunks directly from your peer over WebRTC. The document will open automatically once verified.'
               : accepted
-              ? 'A peer that has the PDF accepted the request. Chunks should start arriving shortly.'
+              ? 'A peer that has the file accepted the request. Chunks should start arriving shortly.'
               : onlyRefusals
-              ? 'The peers connected so far do not have the PDF. Make sure the person who shared the link still has it open.'
+              ? 'The peers connected so far do not have the file. Make sure the person who shared the link still has it open.'
               : peerCount > 0
               ? asked
-                ? 'Connected to document peers. Waiting for one that has the PDF to accept the request...'
-                : 'Connected to document peers. Requesting the original PDF binary data...'
+                ? 'Connected to document peers. Waiting for one that has the file to accept the request...'
+                : 'Connected to document peers. Requesting the original file...'
               : 'Waiting for the document host to connect. Ensure the person who shared this link has EditorDoc open in their browser.'}
           </p>
         </div>
@@ -195,7 +196,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
         {/* Request / transfer status */}
         {transferLog.length > 0 && (
           <div className="max-w-md mx-auto text-left bg-linen rounded-2xl p-4 space-y-2" aria-live="polite">
-            <div className="eyebrow">PDF request status</div>
+            <div className="eyebrow">File request status</div>
             <ul className="space-y-1.5">
               {transferLog.map((e, i) => {
                 const { text, tone } = describe(e);
@@ -233,7 +234,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
             className="btn btn-primary"
           >
             <RefreshCw className={`w-4 h-4 ${isRequesting ? 'animate-spin' : ''}`} />
-            <span>{isRequesting ? 'Requesting...' : 'Request PDF from Peers'}</span>
+            <span>{isRequesting ? 'Requesting...' : 'Request file from peers'}</span>
           </button>
 
           {onUploadFile && (
@@ -241,16 +242,16 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="btn btn-secondary"
-                title="If you already have this PDF file locally, upload it to match the room ID immediately"
+                title="If you already have this file locally, upload it to match the room ID immediately"
               >
                 <Upload className="w-4 h-4" />
-                <span>Open Matching Local PDF</span>
+                <span>Open matching local file</span>
               </button>
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFilePicked}
-                accept="application/pdf"
+                accept={OPEN_ACCEPT}
                 className="hidden"
               />
             </>

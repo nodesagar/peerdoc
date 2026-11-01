@@ -21,6 +21,8 @@ interface HeaderProps {
   canRedo: boolean;
   presence: PresenceProps;
   access: RoomAccessApi;
+  /** Word documents have one editor; the page tools are PDF-only */
+  isWordDoc?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,8 +41,9 @@ export const Header: React.FC<HeaderProps> = ({
   canRedo,
   presence,
   access,
+  isWordDoc,
 }) => {
-  const navItems: { tool: ActiveTool; label: string }[] = documentId
+  const navItems: { tool: ActiveTool; label: string }[] = documentId && !isWordDoc
     ? [
         { tool: 'dashboard', label: 'Dashboard' },
         { tool: 'edit', label: 'Edit' },

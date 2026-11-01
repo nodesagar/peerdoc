@@ -15,6 +15,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { pressable } from '../lib/pressable';
+import { OPEN_ACCEPT } from '../lib/formats';
 
 interface DashboardProps {
   setActiveTool: (tool: ActiveTool) => void;
@@ -24,6 +25,7 @@ interface DashboardProps {
   onLoadSample: () => void;
   onUploadNewDoc: (file: File) => void;
   onJoinRoomId: (roomId: string) => void;
+  onNewWordDoc: () => void;
   activeDocId: string | null;
 }
 
@@ -93,6 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onLoadSample,
   onUploadNewDoc,
   onJoinRoomId,
+  onNewWordDoc,
   activeDocId,
 }) => {
   const [joinInput, setJoinInput] = useState('');
@@ -120,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <section className="relative isolate overflow-hidden mx-2 md:mx-3 mt-[calc(4px-var(--header-h))] rounded-4xl sky-paper">
         <div className="relative mx-auto max-w-3xl px-5 pb-10 pt-[calc(var(--header-h)+56px)] text-center sm:pb-12 md:pt-[calc(var(--header-h)+72px)]">
           <h1 className="text-balance font-serif text-heading-sm font-normal text-ink sm:text-heading md:text-display">
-            Edit PDFs without uploading them.
+            Edit Word and PDF files without uploading them.
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-pretty text-body text-graphite md:text-lg">
@@ -133,15 +136,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="btn btn-primary h-12 w-full px-6 text-body sm:w-auto"
             >
               <Upload className="w-4 h-4" />
-              <span>Open a PDF</span>
+              <span>Open a file</span>
             </button>
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFilePicked}
-              accept="application/pdf"
+              accept={OPEN_ACCEPT}
               className="hidden"
             />
+
+            <button
+              onClick={onNewWordDoc}
+              className="btn btn-secondary h-12 w-full px-6 text-body sm:w-auto"
+            >
+              <FileText className="w-4 h-4" />
+              <span>New Word document</span>
+            </button>
 
             <button
               onClick={onLoadSample}

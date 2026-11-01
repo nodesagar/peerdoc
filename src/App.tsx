@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { Dashboard } from './components/Dashboard';
 import { EditTool } from './components/EditTool';
+import { WordEditor } from './components/WordEditor';
 import { OrganizeTool } from './components/OrganizeTool';
 import { RedactTool } from './components/RedactTool';
 import { SignTool } from './components/SignTool';
@@ -16,7 +17,12 @@ import { EncryptTool } from './components/EncryptTool';
 import { ConvertTool } from './components/ConvertTool';
 import { PrivacyModal } from './components/PrivacyModal';
 import { UpdateBanner } from './components/UpdateBanner';
-import { useCRDTSync } from './hooks/useCRDTSync';
+import { useCRDTSync, DocumentSeed } from './hooks/useCRDTSync';
+import { detectFormat, isWordFormat, DocFormat, FORMAT_LABEL } from './lib/formats';
+import { loadWordPackage } from './lib/word/package';
+import { buildWordSeed } from './lib/word/seed';
+import { createDocxFiles } from './lib/word/templates';
+import { zipSync } from 'fflate';
 import { computeSHA256, getOriginalPDF, storeOriginalPDF } from './lib/crdt/pdfStore';
 import { createSampleConfidentialAgreement } from './utils/samplePdfs';
 import { parseShareInput } from './lib/crdt/roomKey';
@@ -32,6 +38,15 @@ async function countPages(bytes: Uint8Array): Promise<number> {
     return 0;
   }
 }
+
+/** Initial CRDT state for a file we hold locally, per format. Throws on a damaged file. */
+async function buildSeed(docId: string, bytes: Uint8Array, format: DocFormat): Promise<DocumentSeed> {
+  if (isWordFormat(format)) return { format: 'word', update: buildWordSeed(docId, loadWordPackage(bytes)) };
+  return { format: 'pdf', pageCount: await countPages(bytes) };
+}
+
+/** PDF-only tools; Word documents are edited in WordEditor. */
+const PDF_ONLY_TOOLS: ActiveTool[] = ['organize', 'redact', 'sign', 'compress'];
 
 /** Tools that work on the shared document (the others take their own files). */
 const DOC_TOOLS: ActiveTool[] = ['edit', 'organize', 'redact', 'sign', 'compress'];
@@ -52,7 +67,9 @@ export default function App() {
   const [accessRevision, setAccessRevision] = useState(0);
   const [rawPdfBytes, setRawPdfBytes] = useState<Uint8Array | null>(null);
   const [fileName, setFileName] = useState<string>('Document.pdf');
-  const [pageCount, setPageCount] = useState<number>(0);
+  const [seed, setSeed] = useState<DocumentSeed | null>(null);
+  // Known from local bytes; joiners still waiting for the file learn it from the room
+  const [docFormat, setDocFormat] = useState<DocFormat | null>(null);
 
   const [recentDocs, setRecentDocs] = useState<ProcessedDoc[]>([]);
 
@@ -63,8 +80,9 @@ export default function App() {
     roomKey: access.roomKey,
     initialPdfBytes: rawPdfBytes,
     initialTitle: fileName,
-    pageCount,
+    seed,
   });
+  const isWordDoc = isWordFormat(docFormat) || crdt.meta.format === 'word';
 
   // Load recent docs history from IndexedDB on startup
   useEffect(() => {
@@ -156,9 +174,20 @@ export default function App() {
   // All document state is set together after every await, so the CRDT hook never
   // sees a new room ID paired with the previous document's bytes or page count.
   const openDocument = async (bytes: Uint8Array, name: string) => {
+    const format = detectFormat(bytes);
+    if (!format) {
+      alert(`"${name}" is not a PDF or Word document.`);
+      return;
+    }
     const docId = (await computeSHA256(bytes.slice())).toLowerCase();
+    let nextSeed: DocumentSeed;
+    try {
+      nextSeed = await buildSeed(docId, bytes, format);
+    } catch (err) {
+      alert(`Could not open this ${FORMAT_LABEL[format]}: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
     await storeOriginalPDF(docId, bytes.slice(), name);
-    const count = await countPages(bytes);
     // Reopening a PDF rejoins its room; a new PDF (or one we were removed from)
     // gets a fresh invite-only room that we own.
     const room = await loadRoom(docId);
@@ -166,7 +195,8 @@ export default function App() {
 
     setFileName(name);
     setRawPdfBytes(bytes.slice());
-    setPageCount(count);
+    setSeed(nextSeed);
+    setDocFormat(format);
     setDocumentId(docId);
     setAccessRevision((n) => n + 1);
     updateUrlDocParam(docId);
@@ -178,8 +208,13 @@ export default function App() {
       const buffer = await file.arrayBuffer();
       await openDocument(new Uint8Array(buffer), file.name);
     } catch (err) {
-      console.error('Failed to upload PDF:', err);
+      console.error('Failed to open file:', err);
     }
+  };
+
+  const handleNewWordDoc = async () => {
+    const bytes = zipSync(createDocxFiles('<w:p/>', { title: 'Untitled document' }));
+    await openDocument(bytes, 'Untitled document.docx');
   };
 
   const handleJoinRoomId = async (input: string) => {
@@ -209,12 +244,21 @@ export default function App() {
         return;
       }
     }
-    // Joiners never seed pages unless they hold the PDF; otherwise pages arrive from peers.
-    const count = existing?.bytes ? await countPages(existing.bytes) : 0;
+    // Joiners never seed unless they hold the file; otherwise content arrives from peers.
+    const format = existing?.bytes ? detectFormat(existing.bytes) : null;
+    let nextSeed: DocumentSeed | null = null;
+    if (existing?.bytes && format) {
+      try {
+        nextSeed = await buildSeed(cleanId, existing.bytes, format);
+      } catch (err) {
+        console.error('Stored file could not be read:', err);
+      }
+    }
 
     setRawPdfBytes(existing?.bytes ?? null);
     setFileName(existing?.filename || 'Document.pdf');
-    setPageCount(count);
+    setSeed(nextSeed);
+    setDocFormat(format);
     setDocumentId(cleanId);
     setAccessRevision((n) => n + 1);
     updateUrlDocParam(cleanId);
@@ -240,6 +284,7 @@ export default function App() {
         canRedo={crdt.canRedo}
         presence={presence}
         access={access}
+        isWordDoc={isWordDoc}
       />
 
       {/* Main Tool Area */}
@@ -257,11 +302,23 @@ export default function App() {
             onLoadSample={handleLoadSample}
             onUploadNewDoc={handleUploadNewDoc}
             onJoinRoomId={handleJoinRoomId}
+            onNewWordDoc={handleNewWordDoc}
             activeDocId={documentId}
           />
         )}
 
-        {activeTool === 'edit' && (
+        {(activeTool === 'edit' || PDF_ONLY_TOOLS.includes(activeTool)) && isWordDoc && (
+          <WordEditor
+            onDocumentProcessed={handleDocumentProcessed}
+            bytes={crdt.rawPdfBytes}
+            documentId={documentId}
+            fileName={fileName}
+            crdt={crdt}
+            onUploadFile={handleUploadNewDoc}
+          />
+        )}
+
+        {activeTool === 'edit' && !isWordDoc && (
           <EditTool
             onDocumentProcessed={handleDocumentProcessed}
             rawPdfBytes={crdt.rawPdfBytes}
@@ -272,7 +329,7 @@ export default function App() {
           />
         )}
 
-        {activeTool === 'organize' && (
+        {activeTool === 'organize' && !isWordDoc && (
           <OrganizeTool
             onDocumentProcessed={handleDocumentProcessed}
             rawPdfBytes={crdt.rawPdfBytes}
@@ -283,7 +340,7 @@ export default function App() {
           />
         )}
 
-        {activeTool === 'redact' && (
+        {activeTool === 'redact' && !isWordDoc && (
           <RedactTool
             onDocumentProcessed={handleDocumentProcessed}
             rawPdfBytes={crdt.rawPdfBytes}
@@ -294,7 +351,7 @@ export default function App() {
           />
         )}
 
-        {activeTool === 'sign' && (
+        {activeTool === 'sign' && !isWordDoc && (
           <SignTool
             onDocumentProcessed={handleDocumentProcessed}
             rawPdfBytes={crdt.rawPdfBytes}
@@ -305,7 +362,7 @@ export default function App() {
           />
         )}
 
-        {activeTool === 'compress' && (
+        {activeTool === 'compress' && !isWordDoc && (
           <CompressTool
             onDocumentProcessed={handleDocumentProcessed}
             rawPdfBytes={crdt.rawPdfBytes}

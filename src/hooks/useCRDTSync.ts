@@ -6,6 +6,7 @@ import {
   DocumentSnapshot,
   readDocumentSnapshot,
   initializeDocument,
+  initializeWordDocument,
   createUndoManager,
   getMetaMap,
   getPagesMap,
@@ -49,8 +50,12 @@ export interface UseCRDTSyncOptions {
   roomKey?: string | null;
   initialPdfBytes?: Uint8Array | null;
   initialTitle?: string;
-  pageCount?: number;
+  /** Initial structure for a document opened from local bytes; joiners get it from peers. */
+  seed?: DocumentSeed | null;
 }
+
+/** Format-specific initial state, built from the original file's bytes. */
+export type DocumentSeed = { format: 'pdf'; pageCount: number } | { format: 'word'; update: Uint8Array };
 
 const EMPTY_SNAPSHOT: DocumentSnapshot = {
   meta: { documentId: '', title: '', createdAt: 0 },
@@ -64,7 +69,7 @@ const EMPTY_SNAPSHOT: DocumentSnapshot = {
 };
 
 export function useCRDTSync(options: UseCRDTSyncOptions) {
-  const { documentId, roomKey, initialPdfBytes, initialTitle, pageCount } = options;
+  const { documentId, roomKey, initialPdfBytes, initialTitle, seed } = options;
 
   const [doc, setDoc] = useState<Y.Doc | null>(null);
   const [snapshot, setSnapshot] = useState<DocumentSnapshot>(EMPTY_SNAPSHOT);
@@ -243,9 +248,11 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
 
         providerHandleRef.current = handle;
 
-        // 3. If doc has no pages yet and pageCount is provided, initialize
-        if (pageCount && pageCount > 0) {
-          initializeDocument(ydoc, cleanDocId, initialTitle || 'Document.pdf', pageCount);
+        // 3. Seed a document opened from local bytes (no-op if it already has content)
+        if (seed?.format === 'pdf' && seed.pageCount > 0) {
+          initializeDocument(ydoc, cleanDocId, initialTitle || 'Document.pdf', seed.pageCount);
+        } else if (seed?.format === 'word') {
+          initializeWordDocument(ydoc, initialTitle || 'Document.docx', seed.update);
         }
 
         // 4. Request PDF bytes from peers if missing locally
@@ -286,7 +293,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       if (docRef.current === ydoc) docRef.current = null;
       ydoc.destroy();
     };
-  }, [documentId, roomKey, pageCount]);
+  }, [documentId, roomKey, seed]);
 
   // ================= Mutation Helpers =================
 
@@ -430,6 +437,11 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     setPageDeletedCRDT(docRef.current, pageId, deleted);
   }, []);
 
+  /** Add a shared type (e.g. a Word header fragment) to this user's undo history. */
+  const trackUndo = useCallback((type: Y.AbstractType<any>) => {
+    undoManagerRef.current?.addToScope(type);
+  }, []);
+
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
   }, []);
@@ -506,6 +518,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     importSync,
     undo,
     redo,
+    trackUndo,
     canUndo,
     canRedo,
     awareness,
