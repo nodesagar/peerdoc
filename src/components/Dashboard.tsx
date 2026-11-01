@@ -12,6 +12,8 @@ import {
   Download,
   SplitSquareHorizontal as Scissors,
   Upload,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { pressable } from '../lib/pressable';
 import { OPEN_ACCEPT } from '../lib/formats';
@@ -102,6 +104,21 @@ const TOOL_CARDS = [
   },
 ];
 
+const RECENT_DOCS_PAGE_SIZE = 10;
+
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total];
+  }
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, '...', current - 1, current, current + 1, '...', total];
+}
+
 export const Dashboard: React.FC<DashboardProps> = ({
   setActiveTool,
   recentDocs,
@@ -114,7 +131,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   activeDocId,
 }) => {
   const [joinInput, setJoinInput] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const totalPages = Math.max(1, Math.ceil(recentDocs.length / RECENT_DOCS_PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * RECENT_DOCS_PAGE_SIZE;
+  const paginatedDocs = recentDocs.slice(startIndex, startIndex + RECENT_DOCS_PAGE_SIZE);
 
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,8 +289,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               No recent documents yet. Open a PDF or Word document, or load the demo agreement above!
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-2 px-2">
-              <table className="w-full text-left border-collapse" aria-label="Recent documents">
+            <>
+              <div className="overflow-x-auto -mx-2 px-2">
+                <table className="w-full text-left border-collapse" aria-label="Recent documents">
                 <thead>
                   <tr className="border-b border-ash text-caption font-semibold text-graphite">
                     <th scope="col" className="py-3 pr-4 pl-2">Document</th>
@@ -279,7 +303,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ash">
-                  {recentDocs.map((doc) => {
+                  {paginatedDocs.map((doc) => {
                     const fmt = (doc.format ?? inferFormatFromName(doc.name) ?? 'pdf').toUpperCase();
                     const isActive = Boolean(activeDocId && doc.documentId && doc.documentId === activeDocId);
                     const badgeClass = ACTION_BADGE_CLASS[doc.action] || 'bg-cloud text-ink';
@@ -398,7 +422,64 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </tbody>
               </table>
             </div>
-          )}
+
+            {/* Pagination Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-ash text-caption">
+              <div className="text-graphite">
+                Showing <span className="font-semibold text-ink tabular-nums">{startIndex + 1}</span>–
+                <span className="font-semibold text-ink tabular-nums">{Math.min(startIndex + RECENT_DOCS_PAGE_SIZE, recentDocs.length)}</span> of{' '}
+                <span className="font-semibold text-ink tabular-nums">{recentDocs.length}</span> documents
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5" role="navigation" aria-label="Recent documents pagination">
+                  <button
+                    onClick={() => setCurrentPage(Math.max(1, safePage - 1))}
+                    disabled={safePage <= 1}
+                    className="btn btn-soft h-8 px-2.5 text-caption disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Previous</span>
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {getPageNumbers(safePage, totalPages).map((item, idx) =>
+                      item === '...' ? (
+                        <span key={`ellipsis-${idx}`} className="px-1.5 text-graphite font-mono">
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={item}
+                          onClick={() => setCurrentPage(item)}
+                          aria-current={safePage === item ? 'page' : undefined}
+                          className={`h-8 min-w-[32px] px-2 rounded-full text-caption font-medium transition-colors ${
+                            safePage === item
+                              ? 'bg-ink text-white shadow-xs'
+                              : 'text-graphite hover:text-ink hover:bg-cloud'
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(Math.min(totalPages, safePage + 1))}
+                    disabled={safePage >= totalPages}
+                    className="btn btn-soft h-8 px-2.5 text-caption disabled:opacity-40 disabled:cursor-not-allowed"
+                    aria-label="Next page"
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </>
+        )}
         </div>
       </div>
     </div>

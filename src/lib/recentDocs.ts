@@ -6,9 +6,16 @@ import { listStoredPDFs, clearStoredPDFs } from './crdt/pdfStore';
 import { formatBytes } from '../utils/pdfProcessor';
 
 export const RECENT_DOCS_KEY = 'editordoc_recent_docs';
+export const ACTIVE_DOC_SESSION_KEY = 'editordoc_active_doc_session';
 export const CACHE_SEEDED_KEY = 'editordoc_recent_cache_seeded';
 export const RECENT_CACHE_NAME = 'peerdoc-recent-history-v1';
 const RECENT_CACHE_URL = '/__peerdoc_recent_docs__';
+
+export interface ActiveDocSession {
+  documentId: string;
+  fileName: string;
+  format?: 'pdf' | 'docx' | 'doc';
+}
 
 const memoryStorage = new Map<string, string>();
 
@@ -284,6 +291,16 @@ export async function saveRecentDocs(docs: ProcessedDoc[]): Promise<void> {
         RECENT_CACHE_URL,
         new Response(json, { headers: { 'Content-Type': 'application/json' } })
       );
+      for (const d of docs) {
+        if (d.blob) {
+          await cache.put(
+            `/__peerdoc_blob__/${encodeURIComponent(d.documentId || d.id)}`,
+            new Response(d.blob, {
+              headers: { 'Content-Type': d.blob.type || 'application/octet-stream' },
+            })
+          );
+        }
+      }
       storageSet(CACHE_SEEDED_KEY, '1');
     }
   } catch {
@@ -294,8 +311,6 @@ export async function saveRecentDocs(docs: ProcessedDoc[]): Promise<void> {
 /**
  * Loads recent documents from browser storage.
  * If the browser cache (Cache Storage or site storage) was erased, clears any stale remnants.
- * Also backfills any stored original documents from IndexedDB (`editordoc_pdf_db`) so every worked
- * document is listed.
  */
 export async function loadRecentDocs(now: number = Date.now()): Promise<ProcessedDoc[]> {
   // 1. Detect if Browser Cache ("Cached images and files") was erased after being seeded
@@ -306,9 +321,11 @@ export async function loadRecentDocs(now: number = Date.now()): Promise<Processe
         const hasCache = await caches.has(RECENT_CACHE_NAME);
         if (!hasCache) {
           storageRemove(RECENT_DOCS_KEY);
+          storageRemove(ACTIVE_DOC_SESSION_KEY);
           storageRemove(CACHE_SEEDED_KEY);
           if (typeof indexedDB !== 'undefined') {
             await del(RECENT_DOCS_KEY).catch(() => {});
+            await del(ACTIVE_DOC_SESSION_KEY).catch(() => {});
           }
           await clearStoredPDFs();
           return [];
@@ -344,42 +361,21 @@ export async function loadRecentDocs(now: number = Date.now()): Promise<Processe
     }
   }
 
-  // 3. Backfill any documents stored in `editordoc_pdf_db` (`original_pdfs`) so previously opened/worked docs appear
+  // 3. Enrich existing saved entries with size/format from stored PDFs if needed
   try {
     const storedFiles = await listStoredPDFs();
     for (const item of storedFiles) {
       const format = detectFormat(item.bytes) ?? inferFormatFromName(item.filename) ?? 'pdf';
-      const exists = docs.some((d) => d.documentId === item.documentId || d.id === item.documentId);
-      if (!exists) {
-        docs = upsertRecentDocList(
-          docs,
-          {
-            id: item.documentId,
-            documentId: item.documentId,
-            name: item.filename,
-            action: 'Opened',
-            size: formatBytes(item.bytes.byteLength),
-            timestamp: item.storedAt,
-            timeAgo: formatTimeAgo(item.storedAt, now),
-            format,
-            tool: 'edit',
-            details: FORMAT_LABEL[format],
-          },
-          now
-        );
-      } else {
-        // Enrich existing entry if size or format was missing
-        docs = docs.map((d) => {
-          if (d.documentId === item.documentId || d.id === item.documentId) {
-            return {
-              ...d,
-              format: d.format ?? format,
-              size: d.size && d.size !== '—' ? d.size : formatBytes(item.bytes.byteLength),
-            };
-          }
-          return d;
-        });
-      }
+      docs = docs.map((d) => {
+        if (d.documentId === item.documentId || d.id === item.documentId) {
+          return {
+            ...d,
+            format: d.format ?? format,
+            size: d.size && d.size !== '—' ? d.size : formatBytes(item.bytes.byteLength),
+          };
+        }
+        return d;
+      });
     }
   } catch {
     // ignore
@@ -397,4 +393,47 @@ export async function loadRecentDocs(now: number = Date.now()): Promise<Processe
   }
 
   return refreshed;
+}
+
+/**
+ * Persists (or clears when null) the active workspace document session so it survives page refreshes.
+ */
+export async function saveActiveDocSession(session: ActiveDocSession | null): Promise<void> {
+  if (!session) {
+    storageRemove(ACTIVE_DOC_SESSION_KEY);
+    if (typeof indexedDB !== 'undefined') {
+      await del(ACTIVE_DOC_SESSION_KEY).catch(() => {});
+    }
+    return;
+  }
+
+  const json = JSON.stringify(session);
+  storageSet(ACTIVE_DOC_SESSION_KEY, json);
+  if (typeof indexedDB !== 'undefined') {
+    await set(ACTIVE_DOC_SESSION_KEY, session).catch(() => {});
+  }
+}
+
+/**
+ * Restores the active workspace document session if one was open before page refresh.
+ */
+export async function loadActiveDocSession(): Promise<ActiveDocSession | null> {
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      const idbSession = await get<ActiveDocSession>(ACTIVE_DOC_SESSION_KEY);
+      if (idbSession && idbSession.documentId) return idbSession;
+    } catch {
+      // fallback below
+    }
+  }
+  try {
+    const raw = storageGet(ACTIVE_DOC_SESSION_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ActiveDocSession;
+      if (parsed && parsed.documentId) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }

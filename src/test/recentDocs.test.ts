@@ -7,6 +7,8 @@ import {
   summarizeSnapshotWork,
   saveRecentDocs,
   loadRecentDocs,
+  saveActiveDocSession,
+  loadActiveDocSession,
   RECENT_DOCS_KEY,
   CACHE_SEEDED_KEY,
   RECENT_CACHE_NAME,
@@ -189,6 +191,26 @@ describe('Recent Documents tracking & browser-cache persistence', () => {
     vi.unstubAllGlobals();
   });
 
+  it('persists the active document session across refreshes until explicitly saved/closed', async () => {
+    const docId = 'e'.repeat(64);
+    await saveActiveDocSession({
+      documentId: docId,
+      fileName: 'Syllabus.pdf',
+      format: 'pdf',
+    });
+
+    const restored = await loadActiveDocSession();
+    expect(restored).toEqual({
+      documentId: docId,
+      fileName: 'Syllabus.pdf',
+      format: 'pdf',
+    });
+
+    // Ending the session (when Save is clicked) clears the active document session
+    await saveActiveDocSession(null);
+    expect(await loadActiveDocSession()).toBeNull();
+  });
+
   it('renders worked document details inside the recent documents table without a manual Clear History button', () => {
     const docId = 'd'.repeat(64);
     const docs: ProcessedDoc[] = [
@@ -237,5 +259,49 @@ describe('Recent Documents tracking & browser-cache persistence', () => {
     expect(formatTimeAgo(base - 5 * 60_000, base)).toBe('5m ago');
     expect(formatTimeAgo(base - 3 * 3600_000, base)).toBe('3h ago');
     expect(formatTimeAgo(base - 24 * 3600_000, base)).toBe('Yesterday');
+  });
+
+  it('paginates recent documents table to 10 rows per page', () => {
+    const docs: ProcessedDoc[] = Array.from({ length: 25 }, (_, i) => ({
+      id: `doc-${i + 1}`,
+      documentId: `doc-${i + 1}`,
+      name: `Doc_${String(i + 1).padStart(2, '0')}.pdf`,
+      action: 'Opened',
+      size: '100 KB',
+      timestamp: Date.now() - i * 1000,
+      timeAgo: 'Just now',
+      format: 'pdf',
+      tool: 'edit',
+    }));
+
+    const html = renderToStaticMarkup(
+      React.createElement(Dashboard, {
+        setActiveTool: () => {},
+        recentDocs: docs,
+        onSelectRecentDoc: () => {},
+        onOpenRecentDoc: () => {},
+        onLoadSample: () => {},
+        onUploadNewDoc: () => {},
+        onJoinRoomId: () => {},
+        onNewWordDoc: () => {},
+        activeDocId: null,
+      })
+    );
+
+    // Page 1 should contain Doc_01 through Doc_10
+    expect(html).toContain('Doc_01.pdf');
+    expect(html).toContain('Doc_10.pdf');
+    // Page 1 should NOT contain Doc_11 through Doc_25
+    expect(html).not.toContain('Doc_11.pdf');
+    expect(html).not.toContain('Doc_25.pdf');
+
+    // Should indicate showing 1-10 of 25 documents
+    expect(html).toContain('Showing');
+    expect(html).toContain('1</span>–<span class="font-semibold text-ink tabular-nums">10</span> of <span class="font-semibold text-ink tabular-nums">25</span> documents');
+
+    // Should have pagination navigation
+    expect(html).toContain('aria-label="Recent documents pagination"');
+    expect(html).toContain('aria-label="Previous page"');
+    expect(html).toContain('aria-label="Next page"');
   });
 });

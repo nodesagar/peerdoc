@@ -35,6 +35,8 @@ import {
   saveRecentDocs,
   upsertRecentDocList,
   summarizeSnapshotWork,
+  saveActiveDocSession,
+  loadActiveDocSession,
 } from './lib/recentDocs';
 
 async function countPages(bytes: Uint8Array): Promise<number> {
@@ -78,6 +80,11 @@ export default function App() {
   const [docFormat, setDocFormat] = useState<DocFormat | null>(null);
 
   const [recentDocs, setRecentDocs] = useState<ProcessedDoc[]>([]);
+  const [pendingDocRequest, setPendingDocRequest] = useState<{
+    label: string;
+    run: () => Promise<void>;
+  } | null>(null);
+  const [isSavingPrevious, setIsSavingPrevious] = useState(false);
 
   // Who may be in the room; its current key is what the document channel uses
   const access = useRoomAccess(documentId, accessRevision);
@@ -98,9 +105,16 @@ export default function App() {
     });
   }, []);
 
-  // Load recent docs history from browser storage on startup
+  // Load recent docs history and any active workspace session from browser storage on startup
   useEffect(() => {
-    loadRecentDocs().then((loaded) => {
+    const hasInviteHash = new URLSearchParams(window.location.hash.slice(1)).has('i');
+    const inviteHref = hasInviteHash && new URLSearchParams(window.location.search).get('doc') ? window.location.href : null;
+    if (!inviteHref && (window.location.search || window.location.hash)) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
+    (async () => {
+      const loaded = await loadRecentDocs();
       setRecentDocs((prev) => {
         if (prev.length === 0) return loaded;
         let merged = [...loaded];
@@ -110,16 +124,37 @@ export default function App() {
         saveRecentDocs(merged).catch(console.error);
         return merged;
       });
-    });
 
-    // Only process a one-time invite link (#i=<token>&o=<owner>); otherwise keep URL clean
-    // and open the Dashboard so refreshing never auto-opens the last edited file.
-    const hasInviteHash = new URLSearchParams(window.location.hash.slice(1)).has('i');
-    if (hasInviteHash && new URLSearchParams(window.location.search).get('doc')) {
-      handleJoinRoomId(window.location.href);
-    } else if (window.location.search || window.location.hash) {
-      window.history.replaceState(null, '', window.location.pathname);
-    }
+      if (inviteHref) {
+        await joinRoomByIdInternal(inviteHref);
+        return;
+      }
+
+      const activeSession = await loadActiveDocSession();
+      if (activeSession?.documentId) {
+        const cleanId = activeSession.documentId.trim().toLowerCase();
+        const existing = await getOriginalPDF(cleanId);
+        const room = await loadRoom(cleanId);
+        if (!room && existing?.bytes) {
+          await createOwnedRoom(cleanId, await getIdentity());
+        }
+        const format = existing?.bytes ? detectFormat(existing.bytes) : (activeSession.format ?? null);
+        let nextSeed: DocumentSeed | null = null;
+        if (existing?.bytes && format) {
+          try {
+            nextSeed = await buildSeed(cleanId, existing.bytes, format);
+          } catch (err) {
+            console.error('Stored active file could not be read:', err);
+          }
+        }
+        setRawPdfBytes(existing?.bytes ?? null);
+        setFileName(existing?.filename || activeSession.fileName || 'Document.pdf');
+        setSeed(nextSeed);
+        setDocFormat(format);
+        setDocumentId(cleanId);
+        setAccessRevision((n) => n + 1);
+      }
+    })().catch(console.error);
 
     // An invite for the page already open only changes the #fragment: no reload
     const onHashChange = () => {
@@ -142,57 +177,6 @@ export default function App() {
       if (detected) setDocFormat(detected);
     }
   }, [crdt.rawPdfBytes, docFormat]);
-
-  // Automatically record & update the active document in Recent Documents whenever it is worked on or modified
-  useEffect(() => {
-    if (!documentId || !crdt.isLoaded) return;
-
-    const effectiveName =
-      crdt.meta.title && crdt.meta.title !== 'Untitled Document' && fileName === 'Document.pdf'
-        ? crdt.meta.title
-        : fileName;
-    const format: DocFormat = docFormat ?? (isWordDoc ? 'docx' : 'pdf');
-    const summary = summarizeSnapshotWork(crdt.snapshot, {
-      isWordDoc,
-      activeTool,
-      wordModified: crdt.lastModifiedAt !== null,
-      pageCount: seed?.format === 'pdf' ? seed.pageCount : undefined,
-    });
-    const size = crdt.rawPdfBytes ? formatBytes(crdt.rawPdfBytes.byteLength) : '—';
-    const currentTool: ActiveTool = DOC_TOOLS.includes(activeTool) ? activeTool : 'edit';
-
-    setRecentDocs((prev) => {
-      const existing = prev.find((d) => d.documentId === documentId || d.id === documentId);
-      const timestamp = crdt.lastModifiedAt ?? existing?.timestamp ?? Date.now();
-      const updated = upsertRecentDocList(prev, {
-        id: documentId,
-        documentId,
-        name: effectiveName,
-        action: summary.action,
-        size,
-        timestamp,
-        timeAgo: 'Just now',
-        format,
-        pageCount: summary.pageCount,
-        tool: DOC_TOOLS.includes(activeTool) ? activeTool : existing?.tool ?? currentTool,
-        details: summary.details,
-      });
-      saveRecentDocs(updated).catch(console.error);
-      return updated;
-    });
-  }, [
-    documentId,
-    crdt.isLoaded,
-    crdt.lastModifiedAt,
-    crdt.snapshot,
-    crdt.rawPdfBytes,
-    crdt.meta.title,
-    fileName,
-    docFormat,
-    isWordDoc,
-    activeTool,
-    seed,
-  ]);
 
   // Let collaborators see which tool we have open
   const { setPresence, awareness } = crdt;
@@ -226,20 +210,93 @@ export default function App() {
     }
   }, []);
 
+  const endActiveSession = useCallback(() => {
+    setDocumentId(null);
+    setRawPdfBytes(null);
+    setSeed(null);
+    setDocFormat(null);
+    setFileName('Document.pdf');
+    saveActiveDocSession(null).catch(console.error);
+    clearUrlParams();
+  }, [clearUrlParams]);
+
+  // Navigating to Dashboard keeps the active document in the navbar so clicking Edit reopens it.
   const handleNavigateTool = useCallback(
     (tool: ActiveTool) => {
-      if (tool === 'dashboard') {
-        setDocumentId(null);
-        setRawPdfBytes(null);
-        setSeed(null);
-        setDocFormat(null);
-        setFileName('Document.pdf');
-        clearUrlParams();
-      }
+      clearUrlParams();
       setActiveTool(tool);
     },
     [clearUrlParams]
   );
+
+  // Clicking Save inside the workspace saves the document in cache and ends the active session.
+  const handleSaveDocument = useCallback(
+    (savedDoc: ProcessedDoc) => {
+      const summary = summarizeSnapshotWork(crdt.snapshot, {
+        isWordDoc,
+        activeTool,
+        wordModified: crdt.lastModifiedAt !== null || isWordDoc,
+        pageCount: savedDoc.pageCount ?? (seed?.format === 'pdf' ? seed.pageCount : undefined),
+      });
+      handleDocumentProcessed({
+        ...savedDoc,
+        id: savedDoc.documentId || savedDoc.id,
+        documentId: savedDoc.documentId ?? documentId ?? undefined,
+        name: savedDoc.name || fileName,
+        details: savedDoc.details ?? summary.details,
+        pageCount: savedDoc.pageCount ?? summary.pageCount,
+      });
+      endActiveSession();
+      setActiveTool('dashboard');
+    },
+    [crdt.snapshot, crdt.lastModifiedAt, isWordDoc, activeTool, seed, handleDocumentProcessed, documentId, fileName, endActiveSession]
+  );
+
+  const saveActiveDocBeforeSwitching = async () => {
+    if (!documentId) return;
+    const effectiveName =
+      crdt.meta.title && crdt.meta.title !== 'Untitled Document' && fileName === 'Document.pdf'
+        ? crdt.meta.title
+        : fileName;
+    const format: DocFormat = docFormat ?? (isWordDoc ? 'docx' : 'pdf');
+    const summary = summarizeSnapshotWork(crdt.snapshot, {
+      isWordDoc,
+      activeTool,
+      wordModified: crdt.lastModifiedAt !== null,
+      pageCount: seed?.format === 'pdf' ? seed.pageCount : undefined,
+    });
+    let blob: Blob | undefined;
+    let size = crdt.rawPdfBytes ? formatBytes(crdt.rawPdfBytes.byteLength) : '—';
+    if (!isWordDoc && crdt.rawPdfBytes) {
+      try {
+        const converged = await buildConvergedPDF(crdt.rawPdfBytes, crdt.snapshot);
+        blob = new Blob([converged as BlobPart], { type: 'application/pdf' });
+        size = formatBytes(converged.byteLength);
+      } catch {
+        // fallback to raw bytes
+      }
+    } else if (crdt.rawPdfBytes) {
+      blob = new Blob([crdt.rawPdfBytes as BlobPart], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+    }
+
+    handleDocumentProcessed({
+      id: documentId,
+      documentId,
+      name: effectiveName,
+      action: summary.action === 'Opened' ? 'Edited' : summary.action,
+      size,
+      timestamp: Date.now(),
+      timeAgo: 'Just now',
+      blob,
+      format,
+      pageCount: summary.pageCount,
+      tool: DOC_TOOLS.includes(activeTool) ? activeTool : 'edit',
+      details: summary.details,
+    });
+    endActiveSession();
+  };
 
   const handleSelectRecentDoc = async (doc: ProcessedDoc) => {
     if (doc.blob) {
@@ -280,27 +337,6 @@ export default function App() {
     }
   };
 
-  const handleOpenRecentDoc = async (doc: ProcessedDoc) => {
-    if (doc.documentId) {
-      await handleJoinRoomId(doc.documentId, doc.tool);
-    } else if (doc.blob) {
-      const buf = await doc.blob.arrayBuffer();
-      const targetTool = doc.tool && DOC_TOOLS.includes(doc.tool) ? doc.tool : 'edit';
-      await openDocument(new Uint8Array(buf), doc.name, targetTool);
-    } else if (doc.tool) {
-      setActiveTool(doc.tool);
-    }
-  };
-
-  const handleLoadSample = async () => {
-    try {
-      const sampleBytes = await createSampleConfidentialAgreement();
-      await openDocument(sampleBytes, 'Confidential_Agreement.pdf');
-    } catch (err) {
-      console.error('Failed to load demo document:', err);
-    }
-  };
-
   // All document state is set together after every await, so the CRDT hook never
   // sees a new room ID paired with the previous document's bytes or page count.
   const openDocument = async (bytes: Uint8Array, name: string, targetTool: ActiveTool = 'edit') => {
@@ -323,24 +359,7 @@ export default function App() {
     const room = await loadRoom(docId);
     if (!room || room.removed) await createOwnedRoom(docId, await getIdentity());
 
-    const pageCount = nextSeed.format === 'pdf' ? nextSeed.pageCount : undefined;
-    handleDocumentProcessed({
-      id: docId,
-      documentId: docId,
-      name,
-      action: 'Opened',
-      size: formatBytes(bytes.byteLength),
-      timestamp: Date.now(),
-      timeAgo: 'Just now',
-      format,
-      pageCount,
-      tool: targetTool,
-      details:
-        pageCount && pageCount > 0
-          ? `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`
-          : FORMAT_LABEL[format],
-    });
-
+    await saveActiveDocSession({ documentId: docId, fileName: name, format });
     setFileName(name);
     setRawPdfBytes(bytes.slice());
     setSeed(nextSeed);
@@ -351,21 +370,7 @@ export default function App() {
     setActiveTool(targetTool);
   };
 
-  const handleUploadNewDoc = async (file: File) => {
-    try {
-      const buffer = await file.arrayBuffer();
-      await openDocument(new Uint8Array(buffer), file.name);
-    } catch (err) {
-      console.error('Failed to open file:', err);
-    }
-  };
-
-  const handleNewWordDoc = async () => {
-    const bytes = zipSync(createDocxFiles('<w:p/>', { title: 'Untitled document' }));
-    await openDocument(bytes, 'Untitled document.docx');
-  };
-
-  const handleJoinRoomId = async (input: string, preferredTool?: ActiveTool) => {
+  const joinRoomByIdInternal = async (input: string, preferredTool?: ActiveTool) => {
     const parsed = parseShareInput(input);
     if (!parsed) {
       alert('Invalid link. Paste an invite link, or the 64-character document ID of a document you have opened before.');
@@ -405,26 +410,12 @@ export default function App() {
 
     const nextTool: ActiveTool =
       preferredTool && DOC_TOOLS.includes(preferredTool) ? preferredTool : 'edit';
-    const pageCount = nextSeed?.format === 'pdf' ? nextSeed.pageCount : undefined;
-    handleDocumentProcessed({
-      id: cleanId,
-      documentId: cleanId,
-      name: existing?.filename || 'Document.pdf',
-      action: 'Opened',
-      size: existing?.bytes ? formatBytes(existing.bytes.byteLength) : '—',
-      timestamp: Date.now(),
-      timeAgo: 'Just now',
-      format: format ?? undefined,
-      pageCount,
-      tool: nextTool,
-      details:
-        pageCount && pageCount > 0
-          ? `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`
-          : format
-          ? FORMAT_LABEL[format]
-          : undefined,
-    });
 
+    await saveActiveDocSession({
+      documentId: cleanId,
+      fileName: existing?.filename || 'Document.pdf',
+      format: format ?? undefined,
+    });
     setRawPdfBytes(existing?.bytes ?? null);
     setFileName(existing?.filename || 'Document.pdf');
     setSeed(nextSeed);
@@ -435,6 +426,75 @@ export default function App() {
     setActiveTool(nextTool);
   };
 
+  const guardActiveDocument = (label: string, action: () => Promise<void>) => {
+    if (documentId) {
+      setPendingDocRequest({ label, run: action });
+      return;
+    }
+    action();
+  };
+
+  const handleOpenRecentDoc = async (doc: ProcessedDoc) => {
+    if (doc.documentId && doc.documentId === documentId) {
+      const targetTool = doc.tool && DOC_TOOLS.includes(doc.tool) ? doc.tool : 'edit';
+      setActiveTool(targetTool);
+      return;
+    }
+    guardActiveDocument(doc.name, async () => {
+      if (doc.documentId) {
+        await joinRoomByIdInternal(doc.documentId, doc.tool);
+      } else if (doc.blob) {
+        const buf = await doc.blob.arrayBuffer();
+        const targetTool = doc.tool && DOC_TOOLS.includes(doc.tool) ? doc.tool : 'edit';
+        await openDocument(new Uint8Array(buf), doc.name, targetTool);
+      } else if (doc.tool) {
+        setActiveTool(doc.tool);
+      }
+    });
+  };
+
+  const handleLoadSample = async () => {
+    guardActiveDocument('Confidential_Agreement.pdf', async () => {
+      try {
+        const sampleBytes = await createSampleConfidentialAgreement();
+        await openDocument(sampleBytes, 'Confidential_Agreement.pdf');
+      } catch (err) {
+        console.error('Failed to load demo document:', err);
+      }
+    });
+  };
+
+  const handleUploadNewDoc = async (file: File) => {
+    guardActiveDocument(file.name, async () => {
+      try {
+        const buffer = await file.arrayBuffer();
+        await openDocument(new Uint8Array(buffer), file.name);
+      } catch (err) {
+        console.error('Failed to open file:', err);
+      }
+    });
+  };
+
+  const handleNewWordDoc = async () => {
+    guardActiveDocument('Untitled document.docx', async () => {
+      const bytes = zipSync(createDocxFiles('<w:p/>', { title: 'Untitled document' }));
+      await openDocument(bytes, 'Untitled document.docx');
+    });
+  };
+
+  const handleJoinRoomId = async (input: string, preferredTool?: ActiveTool) => {
+    const parsed = parseShareInput(input);
+    if (parsed && parsed.documentId === documentId) {
+      const nextTool: ActiveTool =
+        preferredTool && DOC_TOOLS.includes(preferredTool) ? preferredTool : 'edit';
+      setActiveTool(nextTool);
+      return;
+    }
+    guardActiveDocument(parsed ? `Room ${parsed.documentId.slice(0, 8)}...` : 'new document', async () => {
+      await joinRoomByIdInternal(input, preferredTool);
+    });
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-canvas text-ink">
       {/* Navigation Header with CollaborationBar */}
@@ -443,6 +503,7 @@ export default function App() {
         setActiveTool={handleNavigateTool}
         onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
         documentId={documentId}
+        fileName={fileName}
         syncStatus={crdt.syncStatus}
         peerCount={crdt.peerCount}
         servingCount={crdt.servingCount}
@@ -480,6 +541,7 @@ export default function App() {
         {(activeTool === 'edit' || PDF_ONLY_TOOLS.includes(activeTool)) && isWordDoc && (
           <WordEditor
             onDocumentProcessed={handleDocumentProcessed}
+            onSaveDocument={handleSaveDocument}
             bytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
@@ -491,6 +553,7 @@ export default function App() {
         {activeTool === 'edit' && !isWordDoc && (
           <EditTool
             onDocumentProcessed={handleDocumentProcessed}
+            onSaveDocument={handleSaveDocument}
             rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
@@ -502,6 +565,7 @@ export default function App() {
         {activeTool === 'organize' && !isWordDoc && (
           <OrganizeTool
             onDocumentProcessed={handleDocumentProcessed}
+            onSaveDocument={handleSaveDocument}
             rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
@@ -513,6 +577,7 @@ export default function App() {
         {activeTool === 'redact' && !isWordDoc && (
           <RedactTool
             onDocumentProcessed={handleDocumentProcessed}
+            onSaveDocument={handleSaveDocument}
             rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
@@ -524,6 +589,7 @@ export default function App() {
         {activeTool === 'sign' && !isWordDoc && (
           <SignTool
             onDocumentProcessed={handleDocumentProcessed}
+            onSaveDocument={handleSaveDocument}
             rawPdfBytes={crdt.rawPdfBytes}
             documentId={documentId}
             fileName={fileName}
@@ -568,6 +634,70 @@ export default function App() {
       <Footer onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)} />
 
       <UpdateBanner />
+
+      {/* Prompt when user tries to add/open another document while a previous document is still active */}
+      {pendingDocRequest && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="save-prev-doc-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-xs p-4"
+        >
+          <div className="bg-white rounded-3xl shadow-xl max-w-md w-full p-6 md:p-7 space-y-5 ring-1 ring-ink/10">
+            <div className="space-y-2">
+              <span className="chip bg-marigold text-ink font-medium">Active Workspace Session</span>
+              <h2 id="save-prev-doc-title" className="font-serif text-subheading text-ink">
+                Save previous document first?
+              </h2>
+              <p className="text-body-sm text-graphite leading-relaxed">
+                <strong className="font-semibold text-ink">{fileName}</strong> is currently open in your workspace.
+                Please save your previous document before opening{' '}
+                <strong className="font-semibold text-ink">{pendingDocRequest.label}</strong>.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isSavingPrevious}
+                onClick={() => setPendingDocRequest(null)}
+                className="btn btn-ghost h-10 px-4 text-caption"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPrevious}
+                onClick={() => {
+                  setPendingDocRequest(null);
+                  setActiveTool('edit');
+                }}
+                className="btn btn-secondary h-10 px-4 text-caption"
+              >
+                Go to Editor
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPrevious}
+                onClick={async () => {
+                  const nextAction = pendingDocRequest.run;
+                  try {
+                    setIsSavingPrevious(true);
+                    await saveActiveDocBeforeSwitching();
+                    setPendingDocRequest(null);
+                    await nextAction();
+                  } finally {
+                    setIsSavingPrevious(false);
+                  }
+                }}
+                className="btn btn-primary h-10 px-5 text-caption"
+              >
+                {isSavingPrevious ? 'Saving...' : 'Save & Open New'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Privacy Guarantee Modal */}
       <PrivacyModal
