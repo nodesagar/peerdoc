@@ -426,7 +426,7 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, byt
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: documentId || crypto.randomUUID(),
         name,
         action: 'Edited',
         size: formatBytes(out.byteLength),
@@ -434,6 +434,9 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, byt
         timeAgo: 'Just now',
         blob,
         documentId: documentId || undefined,
+        format: 'docx',
+        tool: 'edit',
+        details: `Word document • ${stats.words.toLocaleString()} words`,
       });
     } catch (err) {
       console.error('Word export failed:', err);

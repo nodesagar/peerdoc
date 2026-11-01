@@ -43,18 +43,20 @@ export const Header: React.FC<HeaderProps> = ({
   access,
   isWordDoc,
 }) => {
-  const navItems: { tool: ActiveTool; label: string }[] = documentId && !isWordDoc
-    ? [
-        { tool: 'dashboard', label: 'Dashboard' },
-        { tool: 'edit', label: 'Edit' },
-        { tool: 'organize', label: 'Organize' },
-        { tool: 'redact', label: 'Redact' },
-        { tool: 'sign', label: 'Sign' },
-      ]
-    : [
-        { tool: 'dashboard', label: 'Dashboard' },
-        { tool: 'edit', label: 'Edit' },
-      ];
+  const isPdfRoomTool = activeTool === 'organize' || activeTool === 'redact' || activeTool === 'sign';
+  const navItems: { tool: ActiveTool; label: string }[] =
+    documentId && !isWordDoc && isPdfRoomTool
+      ? [
+          { tool: 'dashboard', label: 'Dashboard' },
+          { tool: 'edit', label: 'Edit' },
+          { tool: 'organize', label: 'Organize' },
+          { tool: 'redact', label: 'Redact' },
+          { tool: 'sign', label: 'Sign' },
+        ]
+      : [
+          { tool: 'dashboard', label: 'Dashboard' },
+          { tool: 'edit', label: 'Edit' },
+        ];
   const syncFileRef = useRef<HTMLInputElement>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -73,12 +75,12 @@ export const Header: React.FC<HeaderProps> = ({
     // Floating glass pill over the canvas; the strip around it lets clicks through
     <header className="sticky top-0 z-40 px-4 md:px-6 pt-4 pb-2 pointer-events-none">
       <div
-        className={`pointer-events-auto max-w-[1440px] mx-auto h-[52px] flex items-center justify-between gap-3 rounded-full bg-white/75 backdrop-blur-xl ring-1 ring-white/80 pl-1.5 pr-2 transition-shadow duration-200 ${
+        className={`pointer-events-auto max-w-[1440px] mx-auto h-[52px] flex items-center justify-between gap-3 rounded-full bg-white/75 backdrop-blur-xl ring-1 ring-white/80 pl-4 pr-3 transition-shadow duration-200 ${
           isScrolled ? 'shadow-md-2' : 'shadow-subtle'
         }`}
       >
         {/* Left: Brand Logo + Nav Links */}
-        <div className="flex items-center gap-4 min-w-0">
+        <div className="flex items-center gap-5 min-w-0">
           <div
             {...pressable(() => {
               setActiveTool('dashboard');
@@ -95,9 +97,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <path d="M8 15h8" />
               </svg>
             </div>
-            <div className="hidden lg:flex items-center gap-2">
+            <div className="hidden lg:flex items-center">
               <span className="text-lg font-semibold tracking-[-0.45px] text-ink">EditorDoc</span>
-              <span className="chip bg-mint font-semibold uppercase tracking-[0.08em]">P2P</span>
             </div>
           </div>
 

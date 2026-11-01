@@ -1,4 +1,4 @@
-import { get, set, createStore } from 'idb-keyval';
+import { get, set, entries, clear, createStore } from 'idb-keyval';
 
 // Separate IndexedDB store for large PDF binary blobs
 const pdfStoreDb = createStore('editordoc_pdf_db', 'original_pdfs');
@@ -142,6 +142,40 @@ export async function hasOriginalPDF(documentId: string): Promise<boolean> {
     return Boolean(entry);
   } catch {
     return false;
+  }
+}
+
+/**
+ * List all locally stored original documents from IndexedDB.
+ */
+export async function listStoredPDFs(): Promise<
+  { documentId: string; bytes: Uint8Array; filename: string; storedAt: number }[]
+> {
+  if (typeof indexedDB === 'undefined') return [];
+  try {
+    const all = await entries<string, { bytes: Uint8Array; filename?: string; storedAt?: number }>(pdfStoreDb);
+    return all
+      .filter(([key, val]) => typeof key === 'string' && val && val.bytes)
+      .map(([key, val]) => ({
+        documentId: key.trim().toLowerCase(),
+        bytes: new Uint8Array(val.bytes),
+        filename: val.filename || 'Document.pdf',
+        storedAt: val.storedAt || Date.now(),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Clear all locally stored original documents from IndexedDB.
+ */
+export async function clearStoredPDFs(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  try {
+    await clear(pdfStoreDb);
+  } catch {
+    // ignore
   }
 }
 

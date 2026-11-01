@@ -103,7 +103,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
       downloadUint8ArrayAsFile(convergedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: documentId || crypto.randomUUID(),
         name: outputName,
         action: 'Organized',
         size: formatBytes(convergedBytes.byteLength),
@@ -111,6 +111,9 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
         timeAgo: 'Just now',
         blob: new Blob([convergedBytes as any], { type: 'application/pdf' }),
         documentId: documentId || undefined,
+        format: 'pdf',
+        pageCount: crdt.pages.filter((p) => !p.deleted).length,
+        tool: 'organize',
       });
     } catch (err) {
       console.error('Failed to export organized PDF:', err);

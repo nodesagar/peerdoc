@@ -503,7 +503,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       downloadUint8ArrayAsFile(convergedBytes, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: documentId || crypto.randomUUID(),
         name: outputName,
         action: 'Edited',
         size: formatBytes(convergedBytes.byteLength),
@@ -511,6 +511,9 @@ export const EditTool: React.FC<EditToolProps> = ({
         timeAgo: 'Just now',
         blob: new Blob([convergedBytes as any], { type: 'application/pdf' }),
         documentId: documentId || undefined,
+        format: 'pdf',
+        pageCount: numPages,
+        tool: 'edit',
       });
     } catch (err) {
       console.error('Failed to export edited PDF:', err);

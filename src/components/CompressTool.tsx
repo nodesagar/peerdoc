@@ -39,6 +39,7 @@ export const CompressTool: React.FC<CompressToolProps> = ({
   const [compressionLevel, setCompressionLevel] = useState<CompressionLevel>('recommended');
   const [result, setResult] = useState<{ before: number; after: number } | null>(null);
   const [isCompressing, setIsCompressing] = useState<boolean>(false);
+  const sessionDocIdRef = React.useRef<string>(crypto.randomUUID());
 
   // Sync if rawPdfBytes changes from parent
   React.useEffect(() => {
@@ -52,12 +53,27 @@ export const CompressTool: React.FC<CompressToolProps> = ({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
+      const nextId = crypto.randomUUID();
+      sessionDocIdRef.current = nextId;
       setSelectedFile(file);
       setCurrentFileName(file.name);
       setFileSizeBytes(file.size);
       const buffer = await file.arrayBuffer();
-      setFileBuffer(new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
+      setFileBuffer(bytes);
       setResult(null);
+      onDocumentProcessed({
+        id: nextId,
+        name: file.name,
+        action: 'Opened',
+        size: formatBytes(file.size),
+        timestamp: Date.now(),
+        timeAgo: 'Just now',
+        blob: new Blob([bytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'compress',
+        details: 'Opened in Compress tool',
+      });
     }
   };
 
@@ -71,6 +87,7 @@ export const CompressTool: React.FC<CompressToolProps> = ({
       // Apply CRDT edits only when compressing the active collaborative document,
       // never to an unrelated file picked in this tool.
       let inputBuffer = fileBuffer;
+      const isRoomDoc = Boolean(crdt && fileBuffer === rawPdfBytes && crdt.documentId);
       if (crdt && fileBuffer === rawPdfBytes) {
         inputBuffer = await buildConvergedPDF(fileBuffer, crdt.snapshot);
       }
@@ -84,8 +101,14 @@ export const CompressTool: React.FC<CompressToolProps> = ({
       const outputName = currentFileName.replace(/\.pdf$/i, '') + '-compressed.pdf';
       downloadUint8ArrayAsFile(compressedBuffer, outputName);
 
+      const savedPct =
+        originalSizeBytes > 0 && compressedSizeBytes < originalSizeBytes
+          ? Math.round((1 - compressedSizeBytes / originalSizeBytes) * 100)
+          : 0;
+
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: isRoomDoc ? crdt!.documentId! : sessionDocIdRef.current,
+        documentId: isRoomDoc ? crdt!.documentId! : undefined,
         name: outputName,
         action: 'Compressed',
         size: formatBytes(compressedSizeBytes),
@@ -93,6 +116,9 @@ export const CompressTool: React.FC<CompressToolProps> = ({
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([compressedBuffer as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'compress',
+        details: savedPct > 0 ? `Saved ${savedPct}% (${compressionLevel})` : `Compressed (${compressionLevel})`,
       });
     } catch (err) {
       console.error('Compression error:', err);

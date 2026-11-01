@@ -11,10 +11,24 @@ export type ActiveTool =
   | 'convert'
   | 'encrypt';
 
+export type DocAction =
+  | 'Opened'
+  | 'Compressed'
+  | 'Merged'
+  | 'Redacted'
+  | 'Split'
+  | 'Signed'
+  | 'Organized'
+  | 'AI Edited'
+  | 'Edited'
+  | 'Watermarked'
+  | 'Converted'
+  | 'Encrypted';
+
 export interface ProcessedDoc {
   id: string;
   name: string;
-  action: 'Compressed' | 'Merged' | 'Redacted' | 'Split' | 'Signed' | 'Organized' | 'AI Edited' | 'Edited' | 'Watermarked' | 'Converted' | 'Encrypted';
+  action: DocAction;
   size: string;
   originalSize?: string;
   timeAgo: string;
@@ -22,6 +36,10 @@ export interface ProcessedDoc {
   dataUrl?: string;
   blob?: Blob;
   documentId?: string; // SHA-256 room ID for P2P sync
+  format?: 'pdf' | 'docx' | 'doc';
+  pageCount?: number;
+  tool?: ActiveTool;
+  details?: string;
 }
 
 /** Who added an item (display name at the time) and when; absent on items from older builds. */

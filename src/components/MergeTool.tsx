@@ -76,6 +76,9 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([mergedBytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'merge',
+        details: `Merged ${queue.length} ${queue.length === 1 ? 'file' : 'files'}`,
       });
     } catch (err) {
       alert('Error merging files: ' + err);
