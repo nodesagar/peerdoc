@@ -30,6 +30,7 @@ Peer Docs decouples edit operations from raw file storage using Conflict-Free Re
 - **Per-User Undo/Redo**: A `Y.UndoManager` tracks only this user's edits (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, toolbar buttons). Peer edits, IndexedDB loads, `.cdsync` imports and document seeding are never undone.
 - **Installable Offline App (PWA)**: A service worker (`src/sw.js`, generated at build with every asset precached) serves the app shell cache-first, so the editor opens with no network. New versions install in the background and apply when the user clicks **Reload**.
 - **Store-and-Forward (`fileSync.ts`)**: Air-gapped file sync via `.cdsync` files containing idempotent delta updates.
+- **Sync via QR (`qrSync.ts`, `QRSyncModal.tsx`)**: Air-gapped optical sync using animated QR codes (~4 fps) and camera scanning (`qrcode` + `jsqr`), compressing Yjs state updates with `CompressionStream('deflate-raw')` and verifying integrity via SHA-256 session checksums.
 - **Word documents (`src/lib/word/`, `WordEditor.tsx`)**: DOCX (and legacy DOC, converted in the browser) open in a page-view editor. Content lives in the same Y.Doc as `y-prosemirror` fragments (`word:body`, `word:<header/footer part>`), so live sync, offline edits, `.cdsync`, undo and invites work unchanged. The schema mirrors WordprocessingML (paragraph styles, numbering, run properties, tables with merges, pictures); anything not modelled (fields, bookmarks, content controls, shapes, unknown properties) is kept verbatim. Export uses the original package as the template: only the edited body/header/footer XML is rewritten, every other part is written back byte-for-byte. Seeds are deterministic, so peers who import the same file independently merge without duplicating text. Formats are detected by signature in `src/lib/formats.ts`.
 - **True Redaction**: Burns redaction boxes directly into canvas pixels, scrubbing underlying text streams and font glyphs permanently.
 
@@ -140,3 +141,19 @@ To verify real-time and offline peer convergence:
 5. Notice both tabs immediately show **"1 Peer"** and green sync indicators!
 6. Disconnect Window 2 from network / close tab, make edits in both windows offline.
 7. Reconnect or exchange `.cdsync` files: both documents automatically converge to identical state without data loss!
+
+---
+
+## 5. Sync via QR (Offline Optical Sync)
+
+Two devices with a screen and a camera can merge their CRDT edits in airplane mode with zero network, server, or USB drive:
+
+1. Open the **same base document** (matching SHA-256 `documentId`) on both devices and make offline edits on each.
+2. Click **Sync via QR** in the top `CollaborationBar`.
+3. **Round 1**: Device A stays on the **Send** tab (cycling `CD1|<docIdShort>|<sessionId>|<index>|<total>|<chunk>` QR frames at ~4 fps) while Device B switches to **Receive** and points its camera at Device A's screen until it shows **Merged ✓**.
+4. **Round 2**: Click **Swap roles** on both devices so Device B sends its newly merged state back to Device A. Both devices now show **Merged ✓** with the exact same state hash.
+
+> **Notes & Constraints**:
+> - **Edits only**: QR sync carries compressed Yjs CRDT updates only, never the raw PDF binary. Both devices must already have the base document loaded.
+> - **Payload limit**: Updates exceeding 30 QR frames automatically prompt you to use `.cdsync` file export instead.
+> - **Camera permissions**: Browser camera access (`getUserMedia`) requires a secure context (**HTTPS** or **`localhost`**).

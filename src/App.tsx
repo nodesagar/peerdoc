@@ -503,6 +503,7 @@ export default function App() {
         setActiveTool={handleNavigateTool}
         onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
         documentId={documentId}
+        doc={crdt.doc}
         fileName={fileName}
         syncStatus={crdt.syncStatus}
         peerCount={crdt.peerCount}
