@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as Y from 'yjs';
 import { ActiveTool, SyncStatus } from '../types';
 import { ShieldCheck, Menu, X } from 'lucide-react';
 import { pressable } from '../lib/pressable';
@@ -10,6 +11,7 @@ interface HeaderProps {
   setActiveTool: (tool: ActiveTool) => void;
   onOpenPrivacyModal: () => void;
   documentId: string | null;
+  doc?: Y.Doc | null;
   fileName?: string;
   syncStatus: SyncStatus;
   peerCount: number;
@@ -31,6 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTool,
   onOpenPrivacyModal,
   documentId,
+  doc,
   fileName,
   syncStatus,
   peerCount,
@@ -129,6 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
           <CollaborationBar
             activeTool={activeTool}
             documentId={documentId}
+            doc={doc}
             fileName={fileName}
             onOpenActiveDoc={() => setActiveTool('edit')}
             syncStatus={syncStatus}

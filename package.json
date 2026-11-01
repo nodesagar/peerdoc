@@ -23,6 +23,7 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.546.0",
     "mqtt": "^5.16.1",
     "pdf-lib": "^1.17.1",
@@ -36,6 +37,7 @@
     "prosemirror-tables": "^1.8.5",
     "prosemirror-transform": "^1.12.4",
     "prosemirror-view": "^1.42.9",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-pdf": "^10.4.1",
@@ -48,6 +50,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.4",

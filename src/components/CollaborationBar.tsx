@@ -1,11 +1,13 @@
 import React from 'react';
-import { HardDrive, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
+import * as Y from 'yjs';
+import { HardDrive, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2, QrCode } from 'lucide-react';
 import { ActiveTool, SyncStatus } from '../types';
 import { PresenceAvatars } from './PresenceAvatars';
 import type { Awareness } from 'y-protocols/awareness';
 import { usePeers, type PresenceUser } from '../lib/presence';
 import type { RoomAccessApi } from '../hooks/useRoomAccess';
 import { SharePanel } from './SharePanel';
+import { QRSyncModal } from './QRSyncModal';
 
 export interface PresenceProps {
   awareness: Awareness | null;
@@ -16,6 +18,7 @@ export interface PresenceProps {
 interface CollaborationBarProps {
   activeTool?: ActiveTool;
   documentId: string | null;
+  doc?: Y.Doc | null;
   fileName?: string;
   onOpenActiveDoc?: () => void;
   syncStatus: SyncStatus;
@@ -40,6 +43,7 @@ const iconBtn = 'btn btn-ghost h-8 w-8 px-0';
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   activeTool,
   documentId,
+  doc = null,
   fileName,
   onOpenActiveDoc,
   syncStatus,
@@ -57,6 +61,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   const shareRef = React.useRef<HTMLDialogElement>(null);
   const othersOnline = usePeers(presence.awareness, countPeople);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isQRSyncOpen, setIsQRSyncOpen] = React.useState(false);
 
   if (!documentId) {
     return (
@@ -178,11 +183,22 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
 
       {divider}
 
-      {/* Offline Store-and-Forward CDS buttons (in the header menu on phones) */}
-      <div className="hidden sm:flex items-center shrink-0">
+      {/* Offline Store-and-Forward CDS & QR buttons */}
+      <div className="flex items-center shrink-0">
+        <button
+          type="button"
+          onClick={() => setIsQRSyncOpen(true)}
+          className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
+          title="Sync via QR code with a nearby device (no internet needed)"
+          aria-label="Sync via QR"
+        >
+          <QrCode className="w-4 h-4" />
+          <span className="hidden 2xl:inline">Sync via QR</span>
+        </button>
+
         <button
           onClick={onExportSync}
-          className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
+          className="hidden sm:inline-flex btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
           title="Save all changes to a .cdsync file, to carry them to a device that can't connect"
           aria-label="Export sync file (.cdsync)"
         >
@@ -192,7 +208,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
 
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
+          className="hidden sm:inline-flex btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
           title="Apply the changes in a .cdsync file made on another device"
           aria-label="Import sync file (.cdsync)"
         >
@@ -207,6 +223,13 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           className="hidden"
         />
       </div>
+
+      <QRSyncModal
+        isOpen={isQRSyncOpen}
+        onClose={() => setIsQRSyncOpen(false)}
+        doc={doc}
+        documentId={documentId}
+      />
     </div>
   );
 };
