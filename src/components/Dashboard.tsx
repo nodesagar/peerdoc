@@ -137,12 +137,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Hero: clear primary action with room joining as a secondary path */}
       <section className="relative isolate overflow-hidden mx-2 md:mx-3 mt-[calc(4px-var(--header-h))] rounded-4xl sky-paper">
         <div className="relative mx-auto max-w-3xl px-5 pb-10 pt-[calc(var(--header-h)+56px)] text-center sm:pb-12 md:pt-[calc(var(--header-h)+72px)]">
-          <h1 className="text-balance font-serif text-heading-sm font-normal text-ink sm:text-heading md:text-display">
-            Edit Word and PDF files without uploading them.
+          <h1 className="font-serif text-heading-sm font-normal text-ink sm:text-heading md:text-display">
+            Peer-to-peer document
+            <br />
+            editing, offline-first.
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-pretty text-body text-graphite md:text-lg">
-            Open, sign, reorder, or redact files on your device. Share a room link when you want to edit together.
+            Edit, sign, redact, and organize any document entirely on your device—then collaborate directly with peers in encrypted rooms{' '}
+            <mark className="rounded-md bg-marigold px-2 py-0.5 font-medium text-ink">
+              with zero central servers
+            </mark>
+            .
           </p>
 
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -166,7 +172,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="btn btn-secondary h-12 w-full px-6 text-body sm:w-auto"
             >
               <FileText className="w-4 h-4" />
-              <span>New Word document</span>
+              <span>New document</span>
             </button>
 
             <button
@@ -174,7 +180,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="btn btn-secondary h-12 w-full px-6 text-body sm:w-auto"
             >
               <FileText className="w-4 h-4" />
-              <span>Try a sample PDF</span>
+              <span>Try a sample document</span>
             </button>
           </div>
 

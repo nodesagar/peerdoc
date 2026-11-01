@@ -112,10 +112,15 @@ export default function App() {
       });
     });
 
-    // Invite (?doc=<sha256>#i=<token>&o=<owner>) or reopening a document (?doc=<sha256>)
-    if (new URLSearchParams(window.location.search).get('doc')) {
+    // Only process a one-time invite link (#i=<token>&o=<owner>); otherwise keep URL clean
+    // and open the Dashboard so refreshing never auto-opens the last edited file.
+    const hasInviteHash = new URLSearchParams(window.location.hash.slice(1)).has('i');
+    if (hasInviteHash && new URLSearchParams(window.location.search).get('doc')) {
       handleJoinRoomId(window.location.href);
+    } else if (window.location.search || window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname);
     }
+
     // An invite for the page already open only changes the #fragment: no reload
     const onHashChange = () => {
       if (new URLSearchParams(window.location.hash.slice(1)).has('i')) handleJoinRoomId(window.location.href);
@@ -214,13 +219,27 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [undo, redo]);
 
-  // Only the document ID: an invite token is used up, never left in the address bar
-  const updateUrlDocParam = (docId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('doc', docId);
-    url.hash = '';
-    window.history.replaceState(null, '', url.toString());
-  };
+  // Keep the address bar clean so refreshing always opens the Dashboard
+  const clearUrlParams = useCallback(() => {
+    if (window.location.search || window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
+  const handleNavigateTool = useCallback(
+    (tool: ActiveTool) => {
+      if (tool === 'dashboard') {
+        setDocumentId(null);
+        setRawPdfBytes(null);
+        setSeed(null);
+        setDocFormat(null);
+        setFileName('Document.pdf');
+        clearUrlParams();
+      }
+      setActiveTool(tool);
+    },
+    [clearUrlParams]
+  );
 
   const handleSelectRecentDoc = async (doc: ProcessedDoc) => {
     if (doc.blob) {
@@ -328,7 +347,7 @@ export default function App() {
     setDocFormat(format);
     setDocumentId(docId);
     setAccessRevision((n) => n + 1);
-    updateUrlDocParam(docId);
+    clearUrlParams();
     setActiveTool(targetTool);
   };
 
@@ -412,7 +431,7 @@ export default function App() {
     setDocFormat(format);
     setDocumentId(cleanId);
     setAccessRevision((n) => n + 1);
-    updateUrlDocParam(cleanId);
+    clearUrlParams();
     setActiveTool(nextTool);
   };
 
@@ -421,7 +440,7 @@ export default function App() {
       {/* Navigation Header with CollaborationBar */}
       <Header
         activeTool={activeTool}
-        setActiveTool={setActiveTool}
+        setActiveTool={handleNavigateTool}
         onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
         documentId={documentId}
         syncStatus={crdt.syncStatus}
@@ -441,12 +460,12 @@ export default function App() {
       {/* Main Tool Area */}
       <main className="flex-1">
         {DOC_TOOLS.includes(activeTool) && documentId && (access.status === 'pending' || access.status === 'removed') ? (
-          <AccessCard status={access.status} onReturnToDashboard={() => setActiveTool('dashboard')} />
+          <AccessCard status={access.status} onReturnToDashboard={() => handleNavigateTool('dashboard')} />
         ) : (
         <>
         {activeTool === 'dashboard' && (
           <Dashboard
-            setActiveTool={setActiveTool}
+            setActiveTool={handleNavigateTool}
             recentDocs={recentDocs}
             onSelectRecentDoc={handleSelectRecentDoc}
             onOpenRecentDoc={handleOpenRecentDoc}
