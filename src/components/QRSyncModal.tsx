@@ -41,9 +41,9 @@ declare global {
   }
 }
 
-const SEND_FRAME_INTERVAL_MS = 350;
-const SCAN_TICK_MS = 80;
-const MAX_SCAN_DIM = 600;
+const SEND_FRAME_INTERVAL_MS = 450;
+const SCAN_TICK_MS = 85;
+const SCAN_CANVAS_SIZE = 480;
 
 function formatByteSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -64,7 +64,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [updateByteLength, setUpdateByteLength] = useState(0);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [stateHash, setStateHash] = useState<string>('');
+  const [stateHash, setStateHash] = useState( '');
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Receive state
@@ -161,7 +161,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
     return () => window.clearInterval(timer);
   }, [isOpen, tab, isPaused, frames]);
 
-  // Render current QR frame onto canvas (errorCorrectionLevel: 'L', large size & margin)
+  // Render current QR frame onto canvas (QR Version <= 6, large modules, 4-module quiet zone)
   useEffect(() => {
     if (!isOpen || tab !== 'send' || frames.length === 0 || frames.length > MAX_QR_FRAMES) {
       return;
@@ -172,8 +172,8 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
 
     QRCode.toCanvas(canvas, frame, {
       errorCorrectionLevel: 'L',
-      width: 280,
-      margin: 3,
+      width: 220,
+      margin: 4,
       color: {
         dark: '#000000',
         light: '#FFFFFF',
@@ -308,97 +308,99 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
           await videoRef.current.play().catch(() => {});
         }
 
+        const canvas = scanCanvasRef.current;
+        if (canvas) {
+          canvas.width = SCAN_CANVAS_SIZE;
+          canvas.height = SCAN_CANVAS_SIZE;
+        }
+        const ctx = canvas ? canvas.getContext('2d', { willReadFrequently: true }) : null;
+
         const scanTick = async () => {
           if (cancelled || finishingRef.current) return;
-          const video = videoRef.current;
-          const canvas = scanCanvasRef.current;
-
-          if (
-            !video ||
-            !canvas ||
-            video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
-            video.videoWidth === 0 ||
-            video.videoHeight === 0
-          ) {
-            scheduleNextTick(scanTick);
-            return;
-          }
-
-          tickCount++;
-          let foundAny = false;
-
-          // 1. Hardware-accelerated native BarcodeDetector (Android Chrome / iOS 17+ / macOS)
-          if (nativeDetector) {
-            try {
-              const barcodes = await nativeDetector.detect(video);
-              for (const b of barcodes) {
-                if (b.rawValue) {
-                  foundAny = true;
-                  const done = await handleDecodedString(b.rawValue);
-                  if (done) return;
-                }
-              }
-            } catch {
-              // Fall through to jsQR
+          try {
+            const video = videoRef.current;
+            if (
+              !video ||
+              !canvas ||
+              !ctx ||
+              video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+              video.videoWidth === 0 ||
+              video.videoHeight === 0
+            ) {
+              return;
             }
-          }
 
-          // 2. Software jsQR fallback on scaled full frame + center square crop
-          if (!foundAny && !finishingRef.current && !cancelled) {
+            tickCount++;
             const vw = video.videoWidth;
             const vh = video.videoHeight;
-            const scale = Math.min(1, MAX_SCAN_DIM / Math.max(vw, vh));
-            const targetW = Math.max(1, Math.round(vw * scale));
-            const targetH = Math.max(1, Math.round(vh * scale));
+            const minDim = Math.min(vw, vh);
 
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-              canvas.width = targetW;
-              canvas.height = targetH;
+            // Draw center square crop into fixed 480x480 canvas (smooths laptop LCD moiré)
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'medium';
+            const sx1 = Math.floor((vw - minDim) / 2);
+            const sy1 = Math.floor((vh - minDim) / 2);
+            ctx.drawImage(
+              video,
+              sx1,
+              sy1,
+              minDim,
+              minDim,
+              0,
+              0,
+              SCAN_CANVAS_SIZE,
+              SCAN_CANVAS_SIZE
+            );
+
+            // 1. Try native BarcodeDetector on the 2D canvas (avoids locking mobile <video> stream)
+            if (nativeDetector) {
+              try {
+                const barcodes = await nativeDetector.detect(canvas);
+                for (const b of barcodes) {
+                  if (b.rawValue) {
+                    const done = await handleDecodedString(b.rawValue);
+                    if (done) return;
+                  }
+                }
+              } catch {
+                // Fall through to jsQR
+              }
             }
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (ctx) {
-              ctx.drawImage(video, 0, 0, vw, vh, 0, 0, targetW, targetH);
-              const imageData = ctx.getImageData(0, 0, targetW, targetH);
-              let code = jsQR(imageData.data, targetW, targetH, {
+
+            // 2. Run jsQR on the 480x480 canvas
+            let imageData = ctx.getImageData(0, 0, SCAN_CANVAS_SIZE, SCAN_CANVAS_SIZE);
+            let code = jsQR(imageData.data, SCAN_CANVAS_SIZE, SCAN_CANVAS_SIZE, {
+              inversionAttempts: 'attemptBoth',
+            });
+
+            // 3. On odd ticks, also try a 62% center zoom crop (helps when phone is held 25cm from laptop)
+            if ((!code || !code.data) && tickCount % 2 === 1) {
+              const zoomDim = Math.floor(minDim * 0.62);
+              const sx2 = Math.floor((vw - zoomDim) / 2);
+              const sy2 = Math.floor((vh - zoomDim) / 2);
+              ctx.drawImage(
+                video,
+                sx2,
+                sy2,
+                zoomDim,
+                zoomDim,
+                0,
+                0,
+                SCAN_CANVAS_SIZE,
+                SCAN_CANVAS_SIZE
+              );
+              imageData = ctx.getImageData(0, 0, SCAN_CANVAS_SIZE, SCAN_CANVAS_SIZE);
+              code = jsQR(imageData.data, SCAN_CANVAS_SIZE, SCAN_CANVAS_SIZE, {
                 inversionAttempts: 'attemptBoth',
               });
-
-              // On odd ticks, if full frame didn't match, try a center square crop (optical zoom)
-              if ((!code || !code.data) && tickCount % 2 === 1) {
-                const minDim = Math.min(vw, vh);
-                const cropDim = Math.floor(minDim * 0.7);
-                const sx = Math.floor((vw - cropDim) / 2);
-                const sy = Math.floor((vh - cropDim) / 2);
-                const cropCanvasSize = Math.min(480, cropDim);
-                if (canvas.width !== cropCanvasSize || canvas.height !== cropCanvasSize) {
-                  canvas.width = cropCanvasSize;
-                  canvas.height = cropCanvasSize;
-                }
-                ctx.drawImage(
-                  video,
-                  sx,
-                  sy,
-                  cropDim,
-                  cropDim,
-                  0,
-                  0,
-                  cropCanvasSize,
-                  cropCanvasSize
-                );
-                const cropData = ctx.getImageData(0, 0, cropCanvasSize, cropCanvasSize);
-                code = jsQR(cropData.data, cropCanvasSize, cropCanvasSize, {
-                  inversionAttempts: 'attemptBoth',
-                });
-              }
-
-              if (code && code.data) {
-                const done = await handleDecodedString(code.data);
-                if (done) return;
-              }
             }
-          }
 
-          scheduleNextTick(scanTick);
+            if (code && code.data) {
+              await handleDecodedString(code.data);
+            }
+          } finally {
+            scheduleNextTick(scanTick);
+          }
         };
 
         scheduleNextTick(scanTick);
@@ -512,14 +514,16 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
               </div>
             ) : (
               <div className="flex flex-col items-center space-y-2.5">
-                <div className="p-3 rounded-2xl bg-white ring-1 ring-ink/10 shadow-xs flex items-center justify-center">
-                  <canvas
-                    ref={qrCanvasRef}
-                    width={280}
-                    height={280}
-                    style={{ imageRendering: 'pixelated' }}
-                    className="w-[260px] h-[260px] sm:w-[280px] sm:h-[280px] block"
-                  />
+                {/* Dark bezel prevents phone camera auto-exposure from blowing out bright laptop screens */}
+                <div className="p-3 rounded-2xl bg-ink shadow-xs flex items-center justify-center">
+                  <div className="p-1.5 rounded-xl bg-white flex items-center justify-center">
+                    <canvas
+                      ref={qrCanvasRef}
+                      width={220}
+                      height={220}
+                      className="w-[220px] h-[220px] block"
+                    />
+                  </div>
                 </div>
                 <div className="text-center space-y-0.5">
                   <div className="flex items-center justify-center gap-2">
@@ -620,7 +624,7 @@ export const QRSyncModal: React.FC<QRSyncModalProps> = ({
                         ? `Scanning frames (${receivedCount} / ${totalCount})${
                             lastScannedIndex !== null ? ` · read #${lastScannedIndex + 1}` : ''
                           }`
-                        : 'Point camera at the sender’s QR code…'}
+                        : 'Hold phone ~20 cm from the QR code…'}
                     </span>
                     <span className="font-mono">{Math.round(progress * 100)}%</span>
                   </div>

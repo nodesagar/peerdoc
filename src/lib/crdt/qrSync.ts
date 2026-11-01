@@ -1,8 +1,8 @@
 import * as Y from 'yjs';
 
 export const QR_FRAME_PREFIX = 'CD1';
-export const DEFAULT_CHUNK_SIZE = 160;
-export const MAX_QR_FRAMES = 45;
+export const DEFAULT_CHUNK_SIZE = 100;
+export const MAX_QR_FRAMES = 60;
 
 export interface FrameAddResult {
   progress: number;
