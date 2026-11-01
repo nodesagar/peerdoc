@@ -27,6 +27,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { usePageFit } from '../hooks/usePageFit';
 import { SyncWaitingCard } from './SyncWaitingCard';
 import type { Awareness } from 'y-protocols/awareness';
 import { usePeers, attributionTitle, Peer, PresenceState } from '../lib/presence';
@@ -257,6 +258,7 @@ export const EditTool: React.FC<EditToolProps> = ({
   }, [activeAnnotationId, crdt.removeAnnotation]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const { pageZoom, onPageLoad } = usePageFit(containerRef, zoomLevel);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const colors = ['#ffffff', '#808080', '#f64932', '#3b82f6', '#10b981', '#a855f7', '#f97316', '#06b6d4', '#1a1c1c'];
@@ -718,7 +720,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       <div
         ref={containerRef}
         onPointerUp={handlePointerUp}
-        className="flex-1 overflow-auto p-8 flex justify-center items-start"
+        className="flex-1 overflow-auto p-8 flex justify-center-safe items-start"
       >
         <Document
           file={pdfBlobUrl}
@@ -737,10 +739,8 @@ export const EditTool: React.FC<EditToolProps> = ({
                 }}
                 className="relative bg-white shadow-xl rounded-lg select-none overflow-hidden"
                 style={{
-                  transform: `scale(${zoomLevel / 100})`,
-                  transformOrigin: 'top center',
+                  zoom: pageZoom(pageIdx),
                   touchAction: isRectMode || activeTool === 'ink' ? 'none' : undefined, // drawing, not scrolling
-                  marginBottom: `${(zoomLevel / 100 - 1) * 300}px`,
                 }}
                 onPointerDown={(e) => {
                   const targetCanvas = pageRefs.current[pageIdx];
@@ -756,6 +756,7 @@ export const EditTool: React.FC<EditToolProps> = ({
               >
                 <Page
                   pageNumber={pageIdx + 1}
+                  onLoadSuccess={(page) => onPageLoad(pageIdx, page)}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
                   className="pointer-events-none"

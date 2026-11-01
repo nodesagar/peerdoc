@@ -17,6 +17,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { usePageFit } from '../hooks/usePageFit';
 import { attributionTitle } from '../lib/presence';
 import { SyncWaitingCard } from './SyncWaitingCard';
 
@@ -51,6 +52,7 @@ export const SignTool: React.FC<SignToolProps> = ({
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawingSig, setIsDrawingSig] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { pageZoom, onPageLoad } = usePageFit(containerRef, zoomLevel);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const pdfBlobUrl = React.useMemo(() => {
@@ -367,7 +369,7 @@ export const SignTool: React.FC<SignToolProps> = ({
       <div
         ref={containerRef}
         onMouseUp={() => setDraggingSigId(null)}
-        className="flex-1 overflow-auto p-8 flex justify-center items-start"
+        className="flex-1 overflow-auto p-8 flex justify-center-safe items-start"
       >
         <Document
           file={pdfBlobUrl}
@@ -395,13 +397,12 @@ export const SignTool: React.FC<SignToolProps> = ({
                   activeSignatureDataUrl ? 'cursor-copy' : 'cursor-default'
                 }`}
                 style={{
-                  transform: `scale(${zoomLevel / 100})`,
-                  transformOrigin: 'top center',
-                  marginBottom: `${(zoomLevel / 100 - 1) * 300}px`,
+                  zoom: pageZoom(pageIdx),
                 }}
               >
                 <Page
                   pageNumber={pageIdx + 1}
+                  onLoadSuccess={(page) => onPageLoad(pageIdx, page)}
                   renderTextLayer={false}
                   renderAnnotationLayer={false}
                   className="pointer-events-none"

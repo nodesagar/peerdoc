@@ -21,6 +21,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { usePageFit } from '../hooks/usePageFit';
 import { attributionTitle } from '../lib/presence';
 import { SyncWaitingCard } from './SyncWaitingCard';
 
@@ -61,6 +62,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
   const [processing, setProcessing] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const { pageZoom, onPageLoad } = usePageFit(containerRef, zoomLevel);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const pdfProxyRef = useRef<any>(null);
 
@@ -370,7 +372,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         <div
           ref={containerRef}
           onPointerUp={handlePointerUp}
-          className="flex-1 overflow-auto p-8 flex justify-center items-start cursor-crosshair"
+          className="flex-1 overflow-auto p-8 flex justify-center-safe items-start cursor-crosshair"
         >
           <Document
             file={pdfBlobUrl}
@@ -391,9 +393,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                   }}
                   className="relative bg-white shadow-xl rounded-lg select-none overflow-hidden"
                   style={{
-                    transform: `scale(${zoomLevel / 100})`,
-                    transformOrigin: 'top center',
-                    marginBottom: `${(zoomLevel / 100 - 1) * 300}px`,
+                    zoom: pageZoom(pageIdx),
                   }}
                   onPointerDown={(e) => {
                     const targetCanvas = pageRefs.current[pageIdx];
@@ -406,6 +406,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                 >
                   <Page
                     pageNumber={pageIdx + 1}
+                    onLoadSuccess={(page) => onPageLoad(pageIdx, page)}
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
                     className="pointer-events-none"
