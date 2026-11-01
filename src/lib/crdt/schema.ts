@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { ySyncPluginKey } from 'y-prosemirror';
 import { generateFractionalIndex, generateInitialIndices } from './fractionalIndex';
 import { Annotation, ThreadComment, Attribution, PageMetadata, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox } from '../../types';
+import type { TextEdit } from '../pdf/textEdit';
 
 export interface DocumentSnapshot {
   meta: {
@@ -18,6 +19,8 @@ export interface DocumentSnapshot {
   signatures: SignatureBox[];
   annotations: Annotation[];
   comments: ThreadComment[];
+  /** In-place edits of the PDF's own text (absent in snapshots built by older code) */
+  textEdits?: TextEdit[];
 }
 
 export function getMetaMap(doc: Y.Doc): Y.Map<any> {
@@ -52,6 +55,10 @@ export function getCommentsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
   return doc.getMap('comments');
 }
 
+export function getTextEditsMap(doc: Y.Doc): Y.Map<Y.Map<any>> {
+  return doc.getMap('textEdits');
+}
+
 /** Body of a Word document (y-prosemirror fragment). Headers/footers use `word:<part path>`. */
 export const WORD_BODY = 'word:body';
 
@@ -71,6 +78,7 @@ export function createUndoManager(doc: Y.Doc): Y.UndoManager {
       getSignaturesMap(doc),
       getAnnotationsMap(doc),
       getCommentsMap(doc),
+      getTextEditsMap(doc),
       doc.getXmlFragment(WORD_BODY),
     ],
     { trackedOrigins: new Set([null, ySyncPluginKey]) }
@@ -289,6 +297,16 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
   // Thread order: oldest first; id breaks ties identically on every peer
   comments.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
+  const TEXT_EDIT_NUMBERS = ['pageIndex', 'x0', 'x1', 'baseline', 'size', 'originX', 'styleX', 'styleY'] as const;
+  const textEdits: TextEdit[] = [];
+  getTextEditsMap(doc).forEach((m, id) => {
+    const e = { id: (m.get('id') as string) || id, original: String(m.get('original') ?? ''), text: String(m.get('text') ?? ''), ...readAttribution(m) } as TextEdit;
+    for (const k of TEXT_EDIT_NUMBERS) (e as any)[k] = Number(m.get(k) ?? 0);
+    textEdits.push(e);
+  });
+  // Same application order on every peer
+  textEdits.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
   return {
     meta,
     pages: rawPages,
@@ -298,6 +316,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
     signatures,
     annotations,
     comments,
+    textEdits,
   };
 }
 
@@ -632,5 +651,32 @@ export function addCommentCRDT(doc: Y.Doc, c: Omit<ThreadComment, 'id'> & { id?:
 export function removeCommentCRDT(doc: Y.Doc, id: string) {
   doc.transact(() => {
     getCommentsMap(doc).delete(id);
+  });
+}
+
+// ================= In-place text edits =================
+
+/** Create or replace the edit of one text run (fields are last-writer-wins). */
+export function upsertTextEditCRDT(doc: Y.Doc, e: Omit<TextEdit, 'id'> & { id?: string }): string {
+  const id = e.id || crypto.randomUUID();
+  doc.transact(() => {
+    const edits = getTextEditsMap(doc);
+    let map = edits.get(id);
+    if (!map) {
+      map = new Y.Map<any>();
+      map.set('id', id);
+      writeAttribution(map, e);
+      edits.set(id, map);
+    }
+    for (const k of ['pageIndex', 'x0', 'x1', 'baseline', 'size', 'originX', 'styleX', 'styleY', 'original', 'text'] as const) {
+      if (map.get(k) !== e[k]) map.set(k, e[k]);
+    }
+  });
+  return id;
+}
+
+export function removeTextEditCRDT(doc: Y.Doc, id: string) {
+  doc.transact(() => {
+    getTextEditsMap(doc).delete(id);
   });
 }

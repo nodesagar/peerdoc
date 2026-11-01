@@ -1,3 +1,4 @@
+import { applyTextEdits } from '../lib/pdf/textEdit';
 import { PDFDocument, PDFPage, PDFDict, PDFArray, PDFName, PDFNumber, PDFRawStream, PDFHexString, BlendMode, LineCapStyle, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { PDFDocument as PDFDocumentPlus } from 'pdf-lib-plus-encrypt';
 import { PDFMetadataInfo, RedactionBox, WhiteoutBox, TextOverlay, SignatureBox, PageMetadata } from '../types';
@@ -266,6 +267,9 @@ export async function buildConvergedPDF(
   originalPdfBuffer: Uint8Array,
   snapshot: DocumentSnapshot
 ): Promise<Uint8Array> {
+  // In-place text edits rewrite the original pages first, so every later step
+  // (reorder, rasterising redactions, overlays) works on the edited text.
+  if (snapshot.textEdits?.length) originalPdfBuffer = await applyTextEdits(originalPdfBuffer, snapshot.textEdits);
   const sourceDoc = await PDFDocument.load(originalPdfBuffer, { ignoreEncryption: true });
   const newDoc = await PDFDocument.create();
 

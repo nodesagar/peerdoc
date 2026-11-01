@@ -7,6 +7,7 @@ import {
   Check,
   Eraser,
   Type,
+  TextCursorInput,
   RotateCcw,
   Trash2,
   ZoomIn,
@@ -27,6 +28,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { useCRDTSync } from '../hooks/useCRDTSync';
+import { usePdfTextModel, useEditedPdf, EditedPage, TextEditLayer } from './PdfTextLayer';
 import { usePageFit } from '../hooks/usePageFit';
 import { SyncWaitingCard } from './SyncWaitingCard';
 import type { Awareness } from 'y-protocols/awareness';
@@ -128,7 +130,7 @@ const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string
   );
 };
 
-type EditorMode = 'text' | 'eraser' | 'highlight' | 'box' | 'ink' | 'note';
+type EditorMode = 'edit' | 'text' | 'eraser' | 'highlight' | 'box' | 'ink' | 'note';
 
 const REVIEW_MODES: { mode: EditorMode; label: string; Icon: React.FC<{ className?: string }> }[] = [
   { mode: 'highlight', label: 'Highlight', Icon: Highlighter },
@@ -160,7 +162,8 @@ export const EditTool: React.FC<EditToolProps> = ({
   crdt,
   onUploadFile,
 }) => {
-  const [activeTool, setActiveTool] = useState<EditorMode>('text');
+  // Editing the PDF's own text is the primary mode
+  const [activeTool, setActiveTool] = useState<EditorMode>('edit');
   const isRectMode = activeTool === 'eraser' || activeTool === 'highlight' || activeTool === 'box';
 
   // Review markup
@@ -275,6 +278,11 @@ export const EditTool: React.FC<EditToolProps> = ({
     };
   }, [pdfBlobUrl]);
 
+  // In-place text editing: runs of the original file, and the file as displayed with edits applied
+  const textModel = usePdfTextModel(rawPdfBytes);
+  const edited = useEditedPdf(rawPdfBytes, crdt.textEdits, numPages);
+  const shownEditKeys = React.useMemo(() => edited.shown?.keys ?? new Set<string>(), [edited.shown]);
+
   // Keep textStyle updated when selecting text overlay
   useEffect(() => {
     if (activeTextId) {
@@ -354,7 +362,8 @@ export const EditTool: React.FC<EditToolProps> = ({
       }
     }
 
-    // Canvas click
+    // Canvas click (in Edit text mode the text layer handles clicks)
+    if (activeTool === 'edit') return;
     if (isRectMode) {
       setIsDrawing(true);
       const { x, y } = getCoordinates(e, canvasEl);
@@ -554,9 +563,13 @@ export const EditTool: React.FC<EditToolProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           {/* Tool switch */}
           <div className="segmented">
-            <button onClick={() => setActiveTool('text')} aria-pressed={activeTool === 'text'} className="segment">
+            <button onClick={() => setActiveTool('edit')} aria-pressed={activeTool === 'edit'} className="segment" title="Click any text in the PDF to edit it in place">
+              <TextCursorInput className="w-3.5 h-3.5" />
+              <span>Edit text</span>
+            </button>
+            <button onClick={() => setActiveTool('text')} aria-pressed={activeTool === 'text'} className="segment" title="Click on the page to add text that matches the text around it">
               <Type className="w-3.5 h-3.5" />
-              <span>Text</span>
+              <span>Add text</span>
             </button>
             <button onClick={() => setActiveTool('eraser')} aria-pressed={activeTool === 'eraser'} className="segment">
               <Eraser className="w-3.5 h-3.5" />
@@ -597,7 +610,7 @@ export const EditTool: React.FC<EditToolProps> = ({
           )}
 
           {/* Text options if active */}
-          {activeTool === 'text' && (
+          {activeTool === 'text' && activeTextId && (
             <div className="flex flex-wrap items-center gap-2 pl-3 border-l border-ash">
               <div className="w-36">
                 <FontSelect
@@ -754,12 +767,22 @@ export const EditTool: React.FC<EditToolProps> = ({
                 }}
                 onPointerLeave={() => publishCursor(null)}
               >
-                <Page
-                  pageNumber={pageIdx + 1}
+                <EditedPage
+                  pageIndex={pageIdx}
+                  shown={edited.shown}
+                  next={edited.next}
+                  onRendered={edited.onRendered}
                   onLoadSuccess={(page) => onPageLoad(pageIdx, page)}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                  className="pointer-events-none"
+                />
+
+                <TextEditLayer
+                  pageIndex={pageIdx}
+                  model={textModel?.[pageIdx]}
+                  edits={crdt.textEdits.filter((t) => t.pageIndex === pageIdx)}
+                  shownKeys={shownEditKeys}
+                  mode={activeTool === 'edit' ? 'edit' : activeTool === 'text' ? 'insert' : 'off'}
+                  onUpsert={crdt.upsertTextEdit}
+                  onRemove={crdt.removeTextEdit}
                 />
 
                 <AnnotationLayer

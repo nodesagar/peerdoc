@@ -16,6 +16,9 @@ import {
   getSignaturesMap,
   getAnnotationsMap,
   getCommentsMap,
+  getTextEditsMap,
+  upsertTextEditCRDT,
+  removeTextEditCRDT,
   addAnnotationCRDT,
   updateAnnotationCRDT,
   removeAnnotationCRDT,
@@ -42,6 +45,7 @@ import { PdfTransferEvent } from '../lib/crdt/docSync';
 export type TransferLogEntry = PdfTransferEvent & { at: number };
 import { exportSyncFile, importSyncFile, downloadSyncFile } from '../lib/crdt/fileSync';
 import { getOriginalPDF, storeOriginalPDF } from '../lib/crdt/pdfStore';
+import type { TextEdit } from '../lib/pdf/textEdit';
 import { SyncStatus, TextOverlay, WhiteoutBox, RedactionBox, SignatureBox, PageMetadata, Annotation } from '../types';
 
 export interface UseCRDTSyncOptions {
@@ -66,6 +70,7 @@ const EMPTY_SNAPSHOT: DocumentSnapshot = {
   signatures: [],
   annotations: [],
   comments: [],
+  textEdits: [],
 };
 
 export function useCRDTSync(options: UseCRDTSyncOptions) {
@@ -159,6 +164,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     const signaturesMap = getSignaturesMap(ydoc);
     const annotationsMap = getAnnotationsMap(ydoc);
     const commentsMap = getCommentsMap(ydoc);
+    const textEditsMap = getTextEditsMap(ydoc);
 
     // Presence travels with the sync engine; it is created per room and never persisted.
     const roomAwareness = new Awareness(ydoc);
@@ -187,6 +193,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     signaturesMap.observeDeep(handleDeepChange);
     annotationsMap.observeDeep(handleDeepChange);
     commentsMap.observeDeep(handleDeepChange);
+    textEditsMap.observeDeep(handleDeepChange);
 
     // Load or initialize
     (async () => {
@@ -279,6 +286,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
       signaturesMap.unobserveDeep(handleDeepChange);
       annotationsMap.unobserveDeep(handleDeepChange);
       commentsMap.unobserveDeep(handleDeepChange);
+      textEditsMap.unobserveDeep(handleDeepChange);
 
       undoManager.destroy();
       if (undoManagerRef.current === undoManager) undoManagerRef.current = null;
@@ -415,6 +423,16 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     return addCommentCRDT(docRef.current, { ...attribution(), annotationId, text: text.trim() });
   }, []);
 
+  /** Edit of an existing text run (or inserted text); `id` updates that edit. */
+  const upsertTextEdit = useCallback((e: Omit<TextEdit, 'id'> & { id?: string }) => {
+    if (!docRef.current) return '';
+    return upsertTextEditCRDT(docRef.current, { ...attribution(), ...e });
+  }, []);
+
+  const removeTextEdit = useCallback((id: string) => {
+    if (docRef.current) removeTextEditCRDT(docRef.current, id);
+  }, []);
+
   const removeComment = useCallback((id: string) => {
     if (docRef.current) removeCommentCRDT(docRef.current, id);
   }, []);
@@ -485,6 +503,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     signatures: snapshot.signatures,
     annotations: snapshot.annotations,
     comments: snapshot.comments,
+    textEdits: snapshot.textEdits ?? [],
     meta: snapshot.meta,
     syncStatus,
     peerCount,
@@ -511,6 +530,8 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
     removeAnnotation,
     addComment,
     removeComment,
+    upsertTextEdit,
+    removeTextEdit,
     movePage,
     rotatePage,
     deletePage,
