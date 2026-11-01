@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ProcessedDoc, WhiteoutBox, TextOverlay } from '../types';
+import { ProcessedDoc, TextOverlay, Annotation } from '../types';
+import { readDocumentSnapshot } from '../lib/crdt/schema';
+import { eraseAnnotations, brushHitsRect, inkBounds, Pt } from '../lib/erase';
 import { buildConvergedPDF, downloadUint8ArrayAsFile, formatBytes } from '../utils/pdfProcessor';
 import {
   FileText,
@@ -23,7 +25,7 @@ import {
   MessageSquarePlus,
   MessagesSquare,
 } from 'lucide-react';
-import { AnnotationLayer, CommentsPanel, ANNOTATION_COLORS } from './Annotations';
+import { AnnotationLayer, CommentsPanel, ANNOTATION_COLORS, ANNOTATION_COLOR_NAMES, resizeRect, Handle } from './Annotations';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -130,6 +132,30 @@ const FontSelect = ({ value, onChange }: { value: string; onChange: (val: string
   );
 };
 
+/** Labelled range input for the tool options bar. */
+const Slider: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void }> = ({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}) => (
+  <label className="flex items-center gap-2 pl-3 border-l border-ash text-caption text-graphite">
+    <span>{label}</span>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="w-24 accent-ink"
+    />
+    <span className="tabular-nums font-medium text-ink w-6">{value}</span>
+  </label>
+);
+
 type EditorMode = 'edit' | 'text' | 'eraser' | 'highlight' | 'box' | 'ink' | 'note';
 
 const REVIEW_MODES: { mode: EditorMode; label: string; Icon: React.FC<{ className?: string }> }[] = [
@@ -166,7 +192,11 @@ export const EditTool: React.FC<EditToolProps> = ({
 }) => {
   // Editing the PDF's own text is the primary mode
   const [activeTool, setActiveTool] = useState<EditorMode>('edit');
-  const isRectMode = activeTool === 'eraser' || activeTool === 'highlight' || activeTool === 'box';
+  const isRectMode = activeTool === 'highlight' || activeTool === 'box';
+  const isReviewMode = REVIEW_MODES.some((m) => m.mode === activeTool);
+  const isDrawMode = isReviewMode || activeTool === 'eraser';
+  // Whiteouts and added text let clicks through, so markup and the eraser work on top of them
+  const passThrough = isDrawMode;
 
   // Review markup
   const [annotationColor, setAnnotationColor] = useState(ANNOTATION_COLORS[0]);
@@ -200,6 +230,23 @@ export const EditTool: React.FC<EditToolProps> = ({
   const [activeTextId, setActiveTextId] = useState<string | null>(null);
   const [draggingEraserId, setDraggingEraserId] = useState<string | null>(null);
   const [draggingTextId, setDraggingTextId] = useState<string | null>(null);
+  // Pointer-to-item offset at grab time: moves place the item absolutely, so a move that lands
+  // before React re-renders the CRDT state can't be lost (incremental deltas drifted).
+  const grab = useRef({ dx: 0, dy: 0 });
+  // Notes drop on release, not press: a touch scroll in Note mode cancels instead of pinning
+  const pendingNote = useRef<{ pageIndex: number; x: number; y: number } | null>(null);
+  // Markup being dragged: the item as grabbed + where the pointer was, so every move places it
+  // absolutely from that origin. `moved` tells a drag from a click (click opens the thread).
+  // `pin`: grabbed by its comment pin, so a click opens the thread (a click on the shape only selects)
+  const annDrag = useRef<{ ann: Annotation; px: number; py: number; moved: boolean; pin: boolean } | null>(null);
+  // Highlight/box being resized by one of its grips (rect as grabbed + which grip)
+  const annResize = useRef<{ ann: Annotation; handle: Handle } | null>(null);
+  // Eraser: brush diameter in % of page width, last brush point, per-page brush outline
+  const [eraserSize, setEraserSize] = useState(4);
+  const lastErase = useRef<Pt | null>(null);
+  const brushRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Box and Draw line width (pt)
+  const [lineWidth, setLineWidth] = useState(2);
 
   const [processing, setProcessing] = useState(false);
 
@@ -211,7 +258,17 @@ export const EditTool: React.FC<EditToolProps> = ({
     isItalic: false,
     color: '#1a1c1c',
   });
-  const [eraserColor, setEraserColor] = useState('#ffffff');
+
+  // Selecting a box or drawing shows its line width on the slider, which then restyles it
+  const selectedAnn = crdt.annotations.find((a) => a.id === activeAnnotationId);
+  const selectedLined = selectedAnn && (selectedAnn.type === 'box' || selectedAnn.type === 'ink') ? selectedAnn : null;
+  useEffect(() => {
+    if (selectedLined?.strokeWidth) setLineWidth(selectedLined.strokeWidth);
+  }, [selectedLined?.id, selectedLined?.strokeWidth]);
+  const changeLineWidth = (w: number) => {
+    setLineWidth(w);
+    if (selectedLined) crdt.updateAnnotation(selectedLined.id, { strokeWidth: w });
+  };
 
   // Presence: what we point at and select; what collaborators have selected
   const { setPresence, awareness } = crdt;
@@ -300,62 +357,67 @@ export const EditTool: React.FC<EditToolProps> = ({
     if (file && onUploadFile) onUploadFile(file);
   };
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvasEl: HTMLDivElement) => {
+  const getCoordinates = (e: React.PointerEvent, canvasEl: HTMLDivElement) => {
     const rect = canvasEl.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-
-    const x = ((clientX - rect.left) / rect.width) * 100;
-    const y = ((clientY - rect.top) / rect.height) * 100;
-    return { x, y };
+    // Clamped: a captured pointer keeps reporting after it leaves the page
+    const pct = (v: number) => Math.min(100, Math.max(0, v * 100));
+    return { x: pct((e.clientX - rect.left) / rect.width), y: pct((e.clientY - rect.top) / rect.height) };
   };
 
-  const handlePointerDown = (
-    e: React.MouseEvent | React.TouchEvent,
-    pageIndex: number,
-    canvasEl: HTMLDivElement
-  ) => {
+  const handlePointerDown = (e: React.PointerEvent, pageIndex: number, canvasEl: HTMLDivElement) => {
+    // Primary button / first finger only: right-click or a second finger must not draw or pin notes
+    if (!e.isPrimary || e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.closest('.delete-btn')) {
       return;
     }
+    // Keep the gesture on this page: moves elsewhere (another page, the toolbar, outside the
+    // window) still report here, and the release always ends it.
+    const capture = () => canvasEl.setPointerCapture(e.pointerId);
 
-    const annotationEl = target.closest('.annotation-node');
-    if (annotationEl) {
-      const id = annotationEl.getAttribute('data-id');
-      if (id) {
-        openThread(id);
-        return;
-      }
+    // Markup: press to select, drag to move, click (no drag) opens its thread. The eraser rubs
+    // markup out instead, so it skips this.
+    const grip = target.closest('.resize-handle');
+    const gripAnn = grip && crdt.annotations.find((a) => a.id === grip.getAttribute('data-id'));
+    if (gripAnn) {
+      annResize.current = { ann: gripAnn, handle: grip.getAttribute('data-handle') as Handle };
+      capture();
+      return;
+    }
+
+    const annId = activeTool !== 'eraser' && target.closest('.annotation-node')?.getAttribute('data-id');
+    const ann = annId && crdt.annotations.find((a) => a.id === annId);
+    if (ann) {
+      const { x, y } = getCoordinates(e, canvasEl);
+      annDrag.current = { ann, px: x, py: y, moved: false, pin: !!target.closest('.annotation-pin') };
+      setActiveAnnotationId(ann.id);
+      setActiveTextId(null);
+      capture();
+      return;
     }
     setActiveAnnotationId(null);
 
-    const eraserEl = target.closest('.eraser-node');
-    if (eraserEl) {
-      const id = eraserEl.getAttribute('data-id');
-      if (id) {
-        setDraggingEraserId(id);
-        const { x, y } = getCoordinates(e, canvasEl);
-        setStartX(x);
-        setStartY(y);
-        setActiveTool('eraser');
-        setActiveTextId(null);
-        return;
-      }
+    const eraserId = target.closest('.eraser-node')?.getAttribute('data-id');
+    const whiteout = eraserId && crdt.whiteouts.find((w) => w.id === eraserId);
+    if (whiteout) {
+      const { x, y } = getCoordinates(e, canvasEl);
+      grab.current = { dx: x - whiteout.x, dy: y - whiteout.y };
+      setDraggingEraserId(whiteout.id);
+      setActiveTextId(null);
+      capture();
+      return;
     }
 
-    const textNode = target.closest('.text-overlay-node');
-    if (textNode) {
-      const id = textNode.getAttribute('data-id');
-      if (id) {
-        setDraggingTextId(id);
-        setActiveTextId(id);
-        setActiveTool('text');
-        const { x, y } = getCoordinates(e, canvasEl);
-        setStartX(x);
-        setStartY(y);
-        return;
-      }
+    const textId = target.closest('.text-overlay-node')?.getAttribute('data-id');
+    const overlay = textId && crdt.textOverlays.find((t) => t.id === textId);
+    if (overlay) {
+      const { x, y } = getCoordinates(e, canvasEl);
+      grab.current = { dx: x - overlay.x, dy: y - overlay.y };
+      setDraggingTextId(overlay.id);
+      setActiveTextId(overlay.id);
+      setActiveTool('text');
+      capture();
+      return;
     }
 
     // Canvas click (in Edit text mode the text layer handles clicks)
@@ -366,14 +428,20 @@ export const EditTool: React.FC<EditToolProps> = ({
       setStartX(x);
       setStartY(y);
       setCurrentBox({ x, y, w: 0, h: 0, pageIndex });
+      capture();
     } else if (activeTool === 'ink') {
       setIsDrawing(true);
       const { x, y } = getCoordinates(e, canvasEl);
       setDraftInk({ pageIndex, points: [x, y] });
+      capture();
+    } else if (activeTool === 'eraser') {
+      setIsDrawing(true);
+      const p = getCoordinates(e, canvasEl);
+      lastErase.current = p;
+      eraseAlong(pageIndex, p, p, canvasEl);
+      capture();
     } else if (activeTool === 'note') {
-      const { x, y } = getCoordinates(e, canvasEl);
-      const id = crdt.addAnnotation({ type: 'note', pageIndex, x, y, width: 0, height: 0, color: annotationColor });
-      if (id) openThread(id, true);
+      pendingNote.current = { pageIndex, ...getCoordinates(e, canvasEl) };
     } else if (activeTool === 'text') {
       const { x, y } = getCoordinates(e, canvasEl);
       const newId = crdt.addTextOverlay({
@@ -387,33 +455,92 @@ export const EditTool: React.FC<EditToolProps> = ({
     }
   };
 
-  const handlePointerMove = (
-    e: React.MouseEvent | React.TouchEvent,
-    canvasEl: HTMLDivElement
-  ) => {
+  /**
+   * Rubs the brush from `a` to `b` over this page's markup: drawings are cut where it passes,
+   * highlights, boxes and whiteouts it touches go. Reads the live doc, not React state: a
+   * stroke split by the previous move must not be split again from a stale copy.
+   */
+  const eraseAlong = (pageIndex: number, a: Pt, b: Pt, canvasEl: HTMLDivElement) => {
+    const doc = crdt.doc;
+    if (!doc) return;
+    const rect = canvasEl.getBoundingClientRect();
+    const brush = { a, b, r: eraserSize / 2, aspect: rect.height / rect.width };
+    const live = readDocumentSnapshot(doc);
+    const { remove, update, add } = eraseAnnotations(
+      live.annotations.filter((x) => x.pageIndex === pageIndex),
+      brush
+    );
+    const whiteouts = live.whiteouts.filter((w) => w.pageIndex === pageIndex && brushHitsRect(w, brush));
+    if (!remove.length && !update.length && !add.length && !whiteouts.length) return;
+    doc.transact(() => {
+      remove.forEach(crdt.removeAnnotation);
+      update.forEach((u) => crdt.updateAnnotation(u.id, u.patch));
+      add.forEach((x) => crdt.addAnnotation(x));
+      whiteouts.forEach((w) => crdt.removeWhiteout(w.id));
+    });
+  };
+
+  /** Brush outline follows the pointer (DOM directly: hover must not re-render every page). */
+  const showBrush = (pageIndex: number, p: Pt | null) => {
+    const el = brushRefs.current[pageIndex];
+    if (!el) return;
+    el.style.display = p ? 'block' : 'none';
+    if (p) {
+      el.style.left = `${p.x}%`;
+      el.style.top = `${p.y}%`;
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent, pageIndex: number, canvasEl: HTMLDivElement) => {
     const { x, y } = getCoordinates(e, canvasEl);
+    const within = (v: number, max: number) => Math.min(max, Math.max(0, v));
+
+    if (activeTool === 'eraser') showBrush(pageIndex, { x, y });
+
+    const resize = annResize.current;
+    if (resize) {
+      crdt.updateAnnotation(resize.ann.id, resizeRect(resize.ann, resize.handle, { x, y }));
+      return;
+    }
+
+    const drag = annDrag.current;
+    if (drag) {
+      const { ann } = drag;
+      // A few tenths of a percent of jitter is still a click
+      if (!drag.moved && Math.hypot(x - drag.px, y - drag.py) < 0.5) return;
+      drag.moved = true;
+      const nx = within(ann.x + x - drag.px, 100 - ann.width);
+      const ny = within(ann.y + y - drag.py, 100 - ann.height);
+      crdt.updateAnnotation(ann.id, {
+        x: nx,
+        y: ny,
+        ...(ann.points && {
+          points: ann.points.map((v, i) => Math.round((v + (i % 2 ? ny - ann.y : nx - ann.x)) * 100) / 100),
+        }),
+      });
+      return;
+    }
 
     if (draggingTextId) {
-      const dx = x - startX;
-      const dy = y - startY;
-      const current = crdt.textOverlays.find((t) => t.id === draggingTextId);
-      if (current) {
-        crdt.updateTextOverlay(draggingTextId, { x: current.x + dx, y: current.y + dy });
-      }
-      setStartX(x);
-      setStartY(y);
+      // ponytail: overlay width unknown here, 95% keeps a grabbable sliver on the page
+      crdt.updateTextOverlay(draggingTextId, { x: within(x - grab.current.dx, 95), y: within(y - grab.current.dy, 95) });
       return;
     }
 
     if (draggingEraserId) {
-      const dx = x - startX;
-      const dy = y - startY;
-      const current = crdt.whiteouts.find((w) => w.id === draggingEraserId);
-      if (current) {
-        crdt.updateWhiteout(draggingEraserId, { x: current.x + dx, y: current.y + dy });
+      const w = crdt.whiteouts.find((b) => b.id === draggingEraserId);
+      if (w) {
+        crdt.updateWhiteout(draggingEraserId, {
+          x: within(x - grab.current.dx, 100 - w.width),
+          y: within(y - grab.current.dy, 100 - w.height),
+        });
       }
-      setStartX(x);
-      setStartY(y);
+      return;
+    }
+
+    if (isDrawing && activeTool === 'eraser' && lastErase.current) {
+      eraseAlong(pageIndex, lastErase.current, { x, y }, canvasEl);
+      lastErase.current = { x, y };
       return;
     }
 
@@ -437,50 +564,54 @@ export const EditTool: React.FC<EditToolProps> = ({
     }
   };
 
-  const handlePointerUp = () => {
-    if (draggingTextId) {
-      setDraggingTextId(null);
-    } else if (draggingEraserId) {
-      setDraggingEraserId(null);
-    } else if (isDrawing && activeTool === 'eraser' && currentBox && currentBox.w > 1 && currentBox.h > 1) {
-      crdt.addWhiteout({
-        pageIndex: currentBox.pageIndex,
-        x: currentBox.x,
-        y: currentBox.y,
-        width: currentBox.w,
-        height: currentBox.h,
-        color: eraserColor,
-      });
-    } else if (isDrawing && (activeTool === 'highlight' || activeTool === 'box') && currentBox && currentBox.w > 0.5 && currentBox.h > 0.5) {
-      const id = crdt.addAnnotation({
-        type: activeTool,
-        pageIndex: currentBox.pageIndex,
-        x: currentBox.x,
-        y: currentBox.y,
-        width: currentBox.w,
-        height: currentBox.h,
-        color: annotationColor,
-      });
-      if (id) setActiveAnnotationId(id);
-    } else if (isDrawing && activeTool === 'ink' && draftInk && draftInk.points.length >= 4) {
-      const xs = draftInk.points.filter((_, i) => i % 2 === 0);
-      const ys = draftInk.points.filter((_, i) => i % 2 === 1);
-      const [minX, minY] = [Math.min(...xs), Math.min(...ys)];
-      const id = crdt.addAnnotation({
-        type: 'ink',
-        pageIndex: draftInk.pageIndex,
-        x: minX,
-        y: minY,
-        width: Math.max(...xs) - minX,
-        height: Math.max(...ys) - minY,
-        color: annotationColor,
-        points: draftInk.points.map((v) => Math.round(v * 100) / 100),
-      });
-      if (id) setActiveAnnotationId(id);
-    }
+  /** Drops any gesture in progress without committing it (pointercancel: scroll took over, etc.). */
+  const resetGesture = () => {
+    pendingNote.current = null;
+    annDrag.current = null;
+    annResize.current = null;
+    lastErase.current = null;
+    setDraggingTextId(null);
+    setDraggingEraserId(null);
     setIsDrawing(false);
     setCurrentBox(null);
     setDraftInk(null);
+  };
+
+  const handlePointerUp = () => {
+    const note = pendingNote.current;
+    const drag = annDrag.current;
+    if (note) {
+      const id = crdt.addAnnotation({ type: 'note', ...note, width: 0, height: 0, color: annotationColor });
+      if (id) openThread(id, true);
+    } else if (drag) {
+      // Selecting markup to move or resize must not pop the panel open (that re-fits the page
+      // under the pointer); the pin is the way into the thread. An open panel follows selection.
+      if (!drag.moved && drag.pin) openThread(drag.ann.id);
+    } else if (isDrawing && isRectMode && currentBox && currentBox.w > 0.5 && currentBox.h > 0.5) {
+      const id = crdt.addAnnotation({
+        type: activeTool as 'highlight' | 'box',
+        pageIndex: currentBox.pageIndex,
+        x: currentBox.x,
+        y: currentBox.y,
+        width: currentBox.w,
+        height: currentBox.h,
+        color: annotationColor,
+        ...(activeTool === 'box' && { strokeWidth: lineWidth }),
+      });
+      if (id) setActiveAnnotationId(id);
+    } else if (isDrawing && activeTool === 'ink' && draftInk && draftInk.points.length >= 4) {
+      const points = draftInk.points.map((v) => Math.round(v * 100) / 100);
+      const id = crdt.addAnnotation({
+        type: 'ink',
+        pageIndex: draftInk.pageIndex,
+        ...inkBounds(points),
+        color: annotationColor,
+        points,
+        strokeWidth: lineWidth,
+      });
+      if (id) setActiveAnnotationId(id);
+    }
+    resetGesture();
   };
 
   const applyTextUpdate = (updates: Partial<TextOverlay>) => {
@@ -587,7 +718,7 @@ export const EditTool: React.FC<EditToolProps> = ({
               <Type className="w-3.5 h-3.5" />
               <span>Add text</span>
             </button>
-            <button onClick={() => setActiveTool('eraser')} aria-pressed={activeTool === 'eraser'} className="segment">
+            <button onClick={() => setActiveTool('eraser')} aria-pressed={activeTool === 'eraser'} className="segment" title="Rub out drawings, highlights and boxes">
               <Eraser className="w-3.5 h-3.5" />
               <span>Eraser</span>
             </button>
@@ -609,14 +740,14 @@ export const EditTool: React.FC<EditToolProps> = ({
             ))}
           </div>
 
-          {(activeTool === 'highlight' || activeTool === 'box' || activeTool === 'ink' || activeTool === 'note') && (
-            <div className="flex items-center gap-1.5 pl-3 border-l border-ash" role="radiogroup" aria-label="Markup colour">
+          {isReviewMode && (
+            <div className="flex items-center gap-1.5 pl-3 border-l border-ash" role="radiogroup" aria-label="Markup color">
               {ANNOTATION_COLORS.map((c) => (
                 <button
                   key={c}
                   role="radio"
                   aria-checked={annotationColor === c}
-                  aria-label={c}
+                  aria-label={ANNOTATION_COLOR_NAMES[c] ?? c}
                   onClick={() => setAnnotationColor(c)}
                   className={swatch(annotationColor === c)}
                   style={{ backgroundColor: c }}
@@ -685,22 +816,12 @@ export const EditTool: React.FC<EditToolProps> = ({
             </div>
           )}
 
-          {/* Eraser options */}
           {activeTool === 'eraser' && (
-            <div className="flex items-center gap-2 pl-3 border-l border-ash">
-              <span className="text-caption text-graphite">Color:</span>
-              <div className="flex items-center gap-1.5">
-                {['#ffffff', '#faf9f8', '#f4f3f2', '#1a1c1c'].map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setEraserColor(c)}
-                    aria-label={`Whiteout colour ${c}`}
-                    className={swatch(eraserColor === c)}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-            </div>
+            <Slider label="Size" value={eraserSize} min={2} max={12} step={1} onChange={setEraserSize} />
+          )}
+
+          {(activeTool === 'box' || activeTool === 'ink' || selectedLined) && (
+            <Slider label="Line" value={lineWidth} min={1} max={12} step={0.5} onChange={changeLineWidth} />
           )}
         </div>
 
@@ -760,6 +881,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       <div
         ref={containerRef}
         onPointerUp={handlePointerUp}
+        onPointerCancel={resetGesture}
         className="flex-1 overflow-auto p-8 flex justify-center-safe items-start"
       >
         <Document
@@ -780,7 +902,8 @@ export const EditTool: React.FC<EditToolProps> = ({
                 className="relative bg-white shadow-xl rounded-lg select-none overflow-hidden"
                 style={{
                   zoom: pageZoom(pageIdx),
-                  touchAction: isRectMode || activeTool === 'ink' ? 'none' : undefined, // drawing, not scrolling
+                  touchAction: isDrawMode && activeTool !== 'note' ? 'none' : undefined, // drawing, not scrolling
+                  cursor: activeTool === 'eraser' ? 'none' : isDrawMode ? 'crosshair' : undefined, // eraser shows its brush
                 }}
                 onPointerDown={(e) => {
                   const targetCanvas = pageRefs.current[pageIdx];
@@ -789,10 +912,13 @@ export const EditTool: React.FC<EditToolProps> = ({
                 onPointerMove={(e) => {
                   const targetCanvas = pageRefs.current[pageIdx];
                   if (!targetCanvas) return;
-                  handlePointerMove(e, targetCanvas);
+                  handlePointerMove(e, pageIdx, targetCanvas);
                   publishCursor({ pageIndex: pageIdx, ...getCoordinates(e, targetCanvas) });
                 }}
-                onPointerLeave={() => publishCursor(null)}
+                onPointerLeave={() => {
+                  publishCursor(null);
+                  showBrush(pageIdx, null);
+                }}
               >
                 <EditedPage
                   pageIndex={pageIdx}
@@ -812,16 +938,8 @@ export const EditTool: React.FC<EditToolProps> = ({
                   onRemove={crdt.removeTextEdit}
                 />
 
-                <AnnotationLayer
-                  annotations={crdt.annotations.filter((a) => a.pageIndex === pageIdx)}
-                  commentCounts={commentCounts}
-                  selectedId={activeAnnotationId}
-                  peerSelections={peerSelections}
-                  draftInk={draftInk?.pageIndex === pageIdx ? draftInk.points : null}
-                  draftColor={annotationColor}
-                />
-
-                {/* Whiteouts layer */}
+                {/* Whiteouts layer: under the markup, as the export draws them. In review
+                    modes they let clicks through so markup can go on top of them. */}
                 {pageWhiteouts.map((w) => (
                   <div
                     key={w.id}
@@ -834,6 +952,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                       width: `${w.width}%`,
                       height: `${w.height}%`,
                       backgroundColor: w.color || '#ffffff',
+                      pointerEvents: passThrough ? 'none' : undefined,
                       ...peerOutline(peerSelections[w.id]),
                     }}
                   >
@@ -850,6 +969,17 @@ export const EditTool: React.FC<EditToolProps> = ({
                   </div>
                 ))}
 
+                <AnnotationLayer
+                  annotations={crdt.annotations.filter((a) => a.pageIndex === pageIdx)}
+                  commentCounts={commentCounts}
+                  selectedId={activeAnnotationId}
+                  peerSelections={peerSelections}
+                  draftInk={draftInk?.pageIndex === pageIdx ? draftInk.points : null}
+                  draftColor={annotationColor}
+                  draftWidth={lineWidth}
+                  resizable={activeTool !== 'eraser'}
+                />
+
                 {/* In-progress drawing whiteout box */}
                 {isDrawing && currentBox && currentBox.pageIndex === pageIdx && (
                   <div
@@ -859,11 +989,9 @@ export const EditTool: React.FC<EditToolProps> = ({
                       top: `${currentBox.y}%`,
                       width: `${currentBox.w}%`,
                       height: `${currentBox.h}%`,
-                      ...(activeTool === 'eraser'
-                        ? { backgroundColor: eraserColor, opacity: 0.8, borderColor: '#0087ff' }
-                        : activeTool === 'highlight'
-                          ? { backgroundColor: annotationColor, opacity: 0.35, borderColor: 'transparent' }
-                          : { borderColor: annotationColor, borderWidth: 2 }),
+                      ...(activeTool === 'highlight'
+                        ? { backgroundColor: annotationColor, opacity: 0.35, borderColor: 'transparent' }
+                        : { borderColor: annotationColor, borderWidth: lineWidth }),
                     }}
                   />
                 )}
@@ -885,6 +1013,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                       fontWeight: t.isBold ? 'bold' : 'normal',
                       fontStyle: t.isItalic ? 'italic' : 'normal',
                       color: t.color || '#1a1c1c',
+                      pointerEvents: passThrough ? 'none' : undefined, // mark up over it, don't grab it
                       ...peerOutline(peerSelections[t.id]),
                     }}
                   >
@@ -908,6 +1037,17 @@ export const EditTool: React.FC<EditToolProps> = ({
                     </button>
                   </div>
                 ))}
+
+                {activeTool === 'eraser' && (
+                  <div
+                    ref={(el) => {
+                      brushRefs.current[pageIdx] = el;
+                    }}
+                    aria-hidden
+                    className="absolute z-30 pointer-events-none rounded-full border-2 border-ink/60 bg-white/40 -translate-x-1/2 -translate-y-1/2"
+                    style={{ width: `${eraserSize}%`, aspectRatio: '1', display: 'none' }}
+                  />
+                )}
 
                 <PeerCursors awareness={awareness} pageIndex={pageIdx} />
               </div>

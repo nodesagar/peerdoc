@@ -280,6 +280,7 @@ export function readDocumentSnapshot(doc: Y.Doc): DocumentSnapshot {
       height: (aMap.get('height') as number) ?? 0,
       color: (aMap.get('color') as string) || '#f9ab00',
       ...(Array.isArray(points) ? { points: points as number[] } : {}),
+      ...(typeof aMap.get('strokeWidth') === 'number' ? { strokeWidth: aMap.get('strokeWidth') as number } : {}),
       resolved: Boolean(aMap.get('resolved')),
       ...readAttribution(aMap),
     });
@@ -605,6 +606,7 @@ export function addAnnotationCRDT(doc: Y.Doc, a: Omit<Annotation, 'id'> & { id?:
     map.set('height', a.height);
     map.set('color', a.color);
     if (a.points) map.set('points', [...a.points]);
+    if (a.strokeWidth) map.set('strokeWidth', a.strokeWidth);
     map.set('resolved', Boolean(a.resolved));
     writeAttribution(map, a);
     getAnnotationsMap(doc).set(id, map);
@@ -615,12 +617,13 @@ export function addAnnotationCRDT(doc: Y.Doc, a: Omit<Annotation, 'id'> & { id?:
 export function updateAnnotationCRDT(
   doc: Y.Doc,
   id: string,
-  patch: Partial<Pick<Annotation, 'x' | 'y' | 'width' | 'height' | 'color' | 'resolved'>>
+  patch: Partial<Pick<Annotation, 'x' | 'y' | 'width' | 'height' | 'color' | 'resolved' | 'points' | 'strokeWidth'>>
 ) {
   doc.transact(() => {
     const map = getAnnotationsMap(doc).get(id);
     if (!map) return;
-    for (const [key, value] of Object.entries(patch)) if (value !== undefined) map.set(key, value);
+    for (const [key, value] of Object.entries(patch))
+      if (value !== undefined) map.set(key, Array.isArray(value) ? [...value] : value);
   });
 }
 

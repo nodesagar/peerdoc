@@ -445,7 +445,7 @@ export async function buildConvergedPDF(
     if (a.type === 'highlight') {
       page.drawRectangle({ ...frame.rect(a), color, opacity: 0.35, blendMode: BlendMode.Multiply });
     } else if (a.type === 'box') {
-      page.drawRectangle({ ...frame.rect(a), borderColor: color, borderWidth: 2 });
+      page.drawRectangle({ ...frame.rect(a), borderColor: color, borderWidth: a.strokeWidth ?? 2 });
     } else if (a.type === 'ink' && a.points && a.points.length >= 4) {
       const pts = a.points;
       const at = (i: number) => {
@@ -453,7 +453,7 @@ export async function buildConvergedPDF(
         return { x, y };
       };
       for (let i = 0; i + 3 < pts.length; i += 2) {
-        page.drawLine({ start: at(i), end: at(i + 2), thickness: 2, color, lineCap: LineCapStyle.Round });
+        page.drawLine({ start: at(i), end: at(i + 2), thickness: a.strokeWidth ?? 2.5, color, lineCap: LineCapStyle.Round });
       }
     }
 

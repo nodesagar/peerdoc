@@ -11,6 +11,7 @@ import {
   createUndoManager,
 } from '../lib/crdt/schema';
 import { buildConvergedPDF } from '../utils/pdfProcessor';
+import { resizeRect } from '../components/Annotations';
 
 const sync = (a: Y.Doc, b: Y.Doc) => {
   Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)));
@@ -69,5 +70,20 @@ describe('annotations and comment threads', () => {
     const note = annots.lookup(0, PDFDict);
     expect(note.get(PDFName.of('Subtype'))).toBe(PDFName.of('Text'));
     expect((note.get(PDFName.of('Contents')) as PDFHexString).decodeText()).toBe('Ana: Löschen? ✓');
+  });
+});
+
+describe('resizing highlights and boxes', () => {
+  const r = { x: 20, y: 20, width: 40, height: 20 };
+  it('a corner grip moves its two edges, the opposite corner stays put', () => {
+    expect(resizeRect(r, 'se', { x: 70, y: 50 })).toEqual({ x: 20, y: 20, width: 50, height: 30 });
+    expect(resizeRect(r, 'nw', { x: 10, y: 15 })).toEqual({ x: 10, y: 15, width: 50, height: 25 });
+  });
+  it('an edge grip moves only its edge', () => {
+    expect(resizeRect(r, 'e', { x: 30, y: 99 })).toEqual({ x: 20, y: 20, width: 10, height: 20 });
+  });
+  it('dragging past the opposite edge flips instead of going negative, never below min', () => {
+    expect(resizeRect(r, 'e', { x: 10, y: 0 })).toEqual({ x: 10, y: 20, width: 10, height: 20 });
+    expect(resizeRect(r, 's', { x: 0, y: 20 }).height).toBe(0.5);
   });
 });

@@ -4,9 +4,43 @@ import { Annotation, ThreadComment } from '../types';
 import { initials, timeAgo, attributionTitle } from '../lib/presence';
 
 export const ANNOTATION_COLORS = ['#f9ab00', '#188038', '#1a73e8', '#d93025', '#9334e6'];
+export const ANNOTATION_COLOR_NAMES: Record<string, string> = {
+  '#f9ab00': 'Yellow',
+  '#188038': 'Green',
+  '#1a73e8': 'Blue',
+  '#d93025': 'Red',
+  '#9334e6': 'Purple',
+};
 const TYPE_LABEL: Record<Annotation['type'], string> = { highlight: 'Highlight', box: 'Box', ink: 'Drawing', note: 'Note' };
 
 type PeerMark = { name: string; color: string };
+type Rect = { x: number; y: number; width: number; height: number };
+
+/** Resize grips: corners and edge midpoints, named by compass side. */
+export type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const HANDLE_CURSOR: Record<Handle, string> = {
+  n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+  ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize',
+};
+
+/**
+ * `r` with its `handle` dragged to `p` (page percent). Always computed from the rect as
+ * grabbed, so dragging past the opposite edge flips the rect instead of going negative.
+ */
+export function resizeRect(r: Rect, handle: Handle, p: { x: number; y: number }, min = 0.5): Rect {
+  let [left, top, right, bottom] = [r.x, r.y, r.x + r.width, r.y + r.height];
+  if (handle.includes('w')) left = p.x;
+  if (handle.includes('e')) right = p.x;
+  if (handle.includes('n')) top = p.y;
+  if (handle.includes('s')) bottom = p.y;
+  return {
+    x: Math.min(left, right),
+    y: Math.min(top, bottom),
+    width: Math.max(min, Math.abs(right - left)),
+    height: Math.max(min, Math.abs(bottom - top)),
+  };
+}
 
 /** Flat [x0,y0,x1,y1,...] -> SVG points attribute. */
 const toPolyline = (pts: number[]) => pts.reduce((s, v, i) => s + (i % 2 ? `,${v} ` : `${v}`), '');
@@ -18,6 +52,9 @@ interface AnnotationLayerProps {
   peerSelections: Record<string, PeerMark>;
   draftInk?: number[] | null;
   draftColor: string;
+  draftWidth: number;
+  /** Show resize grips on the selected highlight or box. */
+  resizable: boolean;
 }
 
 /**
@@ -32,15 +69,20 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   peerSelections,
   draftInk,
   draftColor,
+  draftWidth,
+  resizable,
 }) => (
   <>
     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
       {annotations.map((a) => {
         const selected = a.id === selectedId || !!peerSelections[a.id];
         const ring = peerSelections[a.id]?.color ?? '#0087ff'; // Azure: selection
+        const line = a.strokeWidth ?? (a.type === 'ink' ? 2.5 : 2);
+        const width = selected ? line + 1.5 : line;
+        const hit = Math.max(14, line + 10); // invisible grab area around thin lines
         const common = {
           'data-id': a.id,
-          className: 'annotation-node cursor-pointer',
+          className: 'annotation-node cursor-move',
           style: { pointerEvents: 'visiblePainted' as const },
         };
         if (a.type === 'highlight')
@@ -52,28 +94,56 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           );
         if (a.type === 'box')
           return (
-            <rect key={a.id} {...common} x={a.x} y={a.y} width={a.width} height={a.height} fill="none"
-              stroke={a.color} strokeWidth={selected ? 3.5 : 2} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'stroke' }}>
-              <title>{attributionTitle(a)}</title>
-            </rect>
+            <g key={a.id}>
+              {/* wide invisible stroke: a 2px outline alone is near impossible to click */}
+              <rect {...common} x={a.x} y={a.y} width={a.width} height={a.height} fill="none" stroke="transparent"
+                strokeWidth={hit} vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'stroke' }}>
+                <title>{attributionTitle(a)}</title>
+              </rect>
+              <rect x={a.x} y={a.y} width={a.width} height={a.height} fill="none"
+                stroke={a.color} strokeWidth={width} vectorEffect="non-scaling-stroke" />
+            </g>
           );
         if (a.type === 'ink' && a.points)
           return (
             <g key={a.id}>
               {/* wide invisible stroke makes thin lines easy to click */}
-              <polyline {...common} points={toPolyline(a.points)} fill="none" stroke="transparent" strokeWidth={14}
-                vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'stroke' }} />
-              <polyline points={toPolyline(a.points)} fill="none" stroke={a.color} strokeWidth={selected ? 3.5 : 2.5}
+              <polyline {...common} points={toPolyline(a.points)} fill="none" stroke="transparent" strokeWidth={hit}
+                vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'stroke' }}>
+                <title>{attributionTitle(a)}</title>
+              </polyline>
+              <polyline points={toPolyline(a.points)} fill="none" stroke={a.color} strokeWidth={width}
                 strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             </g>
           );
         return null;
       })}
       {draftInk && draftInk.length >= 4 && (
-        <polyline points={toPolyline(draftInk)} fill="none" stroke={draftColor} strokeWidth={2.5}
+        <polyline points={toPolyline(draftInk)} fill="none" stroke={draftColor} strokeWidth={draftWidth}
           strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       )}
     </svg>
+
+    {/* Resize grips on the selected highlight / box (class + data-* read by the editor) */}
+    {resizable &&
+      annotations
+        .filter((a) => a.id === selectedId && (a.type === 'highlight' || a.type === 'box'))
+        .flatMap((a) =>
+          HANDLES.map((h) => (
+            <div
+              key={`${a.id}-${h}`}
+              data-id={a.id}
+              data-handle={h}
+              aria-hidden
+              className="resize-handle absolute z-[7] w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-azure shadow-md-3 touch-none"
+              style={{
+                left: `${a.x + (h.includes('w') ? 0 : h.includes('e') ? a.width : a.width / 2)}%`,
+                top: `${a.y + (h.includes('n') ? 0 : h.includes('s') ? a.height : a.height / 2)}%`,
+                cursor: HANDLE_CURSOR[h],
+              }}
+            />
+          ))
+        )}
 
     {/* Pins: notes, and a comment badge on any markup that has a thread */}
     {annotations
@@ -85,7 +155,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             key={a.id}
             data-id={a.id}
             title={attributionTitle(a)}
-            className={`annotation-node absolute z-[6] -translate-y-full flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg rounded-bl-none text-white text-[10px] font-bold shadow-md-3 cursor-pointer ${
+            className={`annotation-node annotation-pin absolute z-[6] -translate-y-full flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg rounded-bl-none text-white text-[10px] font-bold shadow-md-3 cursor-move touch-none ${
               a.resolved ? 'opacity-50' : ''
             }`}
             style={{

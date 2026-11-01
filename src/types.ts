@@ -63,6 +63,8 @@ export interface Annotation extends Attribution {
   color: string;
   /** Ink only: flat [x0, y0, x1, y1, ...] in page percent. */
   points?: number[];
+  /** Box and ink line width in points (CSS px at 100%); absent on older items. */
+  strokeWidth?: number;
   resolved?: boolean;
 }
 
