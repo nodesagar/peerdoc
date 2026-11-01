@@ -517,7 +517,7 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onS
   const paperMm = `${Math.round((section.width / 96) * 25.4)} × ${Math.round((section.height / 96) * 25.4)} mm`;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
+    <div className="flex flex-col workspace-h">
       <style>{pkg.styles.css}</style>
 
       {/* Ribbon */}

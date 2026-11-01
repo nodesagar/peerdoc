@@ -266,7 +266,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
+    <div className="flex flex-col workspace-h">
       {/* Top Toolbar */}
       <div className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle px-2 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 z-30">
         <div className="flex flex-wrap items-center gap-2">

@@ -88,6 +88,20 @@
     overflow-x: hidden;
   }
 
+  /* Full-height editor workspaces fill exactly the viewport below the header,
+     so the page itself never scrolls. dvh tracks mobile browser chrome. */
+  .workspace-h {
+    height: calc(100vh - var(--header-h));
+    height: calc(100dvh - var(--header-h));
+  }
+
+  /* A footer under a workspace makes the page taller than the viewport: the
+     canvas scroll chains to the window, then the tool bar hides under the
+     sticky header. Workspaces own the screen, so drop the footer there. */
+  #root:has(.workspace-h) footer {
+    display: none;
+  }
+
   ::selection {
     background-color: var(--color-marigold);
     color: var(--color-ink);
