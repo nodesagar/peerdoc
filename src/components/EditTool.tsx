@@ -1033,7 +1033,9 @@ export const EditTool: React.FC<EditToolProps> = ({
                         crdt.removeTextOverlay(t.id);
                       }}
                       aria-label="Remove text"
-                      className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
+                      title="Remove text"
+                      // Visible while selected too: touch screens have no hover
+                      className={`delete-btn ${activeTextId === t.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100'} absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity`}
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { PDFDocument } from 'pdf-lib';
 import { Page, pdfjs } from 'react-pdf';
 import { interpretPage } from '../lib/pdf/contentStream';
@@ -221,6 +222,10 @@ export const TextEditLayer: React.FC<{
 }> = ({ pageIndex, model, edits, shownKeys, mode, onUpsert, onRemove }) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<OpenEditor | null>(null);
+  // The open editor as of now, cleared by whichever action closes it first: the blur that
+  // follows Enter, Escape or Delete then finds nothing to commit and can't undo that action.
+  const editorRef = useRef<OpenEditor | null>(null);
+  editorRef.current = editor;
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -283,7 +288,8 @@ export const TextEditLayer: React.FC<{
   };
 
   const commit = (cancel = false) => {
-    const ed = editor;
+    const ed = editorRef.current;
+    editorRef.current = null;
     setEditor(null);
     if (!ed || cancel) return;
     const value = ed.value;
@@ -301,6 +307,16 @@ export const TextEditLayer: React.FC<{
       }
       onUpsert({ ...ed.base, text: value, id: ed.editId ?? undefined });
     }
+  };
+
+  /** Deletes the open text in one step: inserted text goes, a line of the PDF's own text is removed. */
+  const remove = () => {
+    const ed = editorRef.current;
+    editorRef.current = null;
+    setEditor(null);
+    if (!ed) return;
+    if (ed.segment) onUpsert({ ...editForSegment(ed.segment, ''), id: ed.editId ?? undefined });
+    else if (ed.editId) onRemove(ed.editId);
   };
 
   const insertAt = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -402,6 +418,25 @@ export const TextEditLayer: React.FC<{
             pointerEvents: 'auto',
           }}
         />
+      )}
+      {editor && (
+        <button
+          type="button"
+          aria-label="Delete this text"
+          title="Delete this text"
+          // mousedown would blur the input and close the editor before the click lands
+          onMouseDown={(e) => e.preventDefault()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={remove}
+          className="absolute z-20 w-5 h-5 -translate-y-1/2 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 hover:brightness-95"
+          style={{
+            left: `calc(max(${editor.box.l + editor.box.w}%, ${editor.box.l + pct(textWidth(editor.value, editor.style) + editor.style.size)}%) + 6px)`,
+            top: `${editor.box.t + editor.box.h / 2}%`,
+            pointerEvents: 'auto',
+          }}
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
       )}
     </div>
   );

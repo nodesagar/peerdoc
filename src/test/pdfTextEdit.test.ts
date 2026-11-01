@@ -67,6 +67,13 @@ describe('in-place PDF text editing', () => {
     expect(untouched.x0).toBeCloseTo(terms.x0, 6);
   });
 
+  it('deletes a line when its replacement is empty (the editor\'s Delete button)', async () => {
+    const bytes = await standardFontPdf();
+    const [total] = await segmentsIn(bytes);
+    const out = await applyTextEdits(bytes, [edit(editForSegment(total, ''))]);
+    expect((await segmentsIn(out)).map((s) => s.text)).toEqual(['Payable within 30 days.']);
+  });
+
   it('edits embedded subset fonts (Chrome PDF, Type0 Identity-H)', async () => {
     const bytes = fixture('chrome-text.pdf');
     const segs = await segmentsIn(bytes);
