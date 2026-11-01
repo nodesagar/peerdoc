@@ -41,10 +41,10 @@ class MemTransport implements SyncTransport {
   getPeers() { return [...MemTransport.net.keys()].filter((id) => id !== this.id); }
 }
 
-function peer(id: string, name: string, relay = false) {
+function peer(id: string, name: string, relay = false, userId = `user-${name}`) {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
-  awareness.setLocalState({ user: { name, color: '#188038' } });
+  awareness.setLocalState({ user: { id: userId, name, color: '#188038' } });
   const transport = new MemTransport(id);
   transport.relay = relay;
   const engine = new DocSyncEngine({ doc, documentId: 'd'.repeat(64), awareness, transports: [transport], getLocalPdfBytes: () => new Uint8Array(1) });
@@ -68,6 +68,30 @@ describe('presence', () => {
     expect(names(bob.awareness)).toEqual([]);
     alice.engine.destroy();
     bob.engine.destroy();
+  });
+
+  it('counts each browser once: reload ghosts and second tabs collapse, my own sessions are not "others"', () => {
+    MemTransport.net.clear();
+    const me = peer('me', 'Jamie Rao', false, 'browser-me');
+    const tGhost = peer('t-old', 'Tanmay', false, 'browser-t'); // T's session before a reload
+    const t = peer('t-new', 'Tanmay', false, 'browser-t'); // ...and after it
+    const myOtherTab = peer('me-2', 'Jamie Rao', false, 'browser-me');
+    expect(names(me.awareness)).toEqual(['Tanmay']); // was ['Tanmay', 'Tanmay', 'Jamie Rao']
+    t.awareness.setLocalStateField('tool', 'sign');
+    expect(remotePeers(me.awareness)[0].tool).toBe('sign'); // the live session wins
+    for (const p of [me, tGhost, t, myOtherTab]) p.engine.destroy();
+  });
+
+  it('a newcomer hears from each peer directly, not stale states forwarded by others', () => {
+    MemTransport.net.clear();
+    const alice = peer('a', 'Alice');
+    const bob = peer('b', 'Bob');
+    // Bob holds a ghost: a state from a client that is gone and never said goodbye
+    bob.awareness.states.set(999, { user: { id: 'gone', name: 'Ghost', color: '#000' } });
+    bob.awareness.meta.set(999, { clock: 1, lastUpdated: Date.now() });
+    const carol = peer('c', 'Carol');
+    expect(names(carol.awareness).sort()).toEqual(['Alice', 'Bob']);
+    for (const p of [alice, bob, carol]) p.engine.destroy();
   });
 
   it('announces departure when the engine is destroyed', () => {

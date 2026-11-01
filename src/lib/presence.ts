@@ -6,6 +6,8 @@ import type { Awareness } from 'y-protocols/awareness';
  * awareness): never stored in the document, expires 30 s after a peer goes quiet.
  */
 export interface PresenceUser {
+  /** Stable per browser: tabs and reloaded sessions of one person share it. */
+  id: string;
   name: string;
   color: string;
 }
@@ -35,11 +37,16 @@ const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 export function getLocalUser(): PresenceUser {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && typeof saved.name === 'string' && typeof saved.color === 'string') return saved;
+    if (saved && typeof saved.name === 'string' && typeof saved.color === 'string') {
+      if (typeof saved.id === 'string') return saved;
+      const upgraded = { ...saved, id: crypto.randomUUID() }; // identities saved before ids existed
+      saveLocalUser(upgraded);
+      return upgraded;
+    }
   } catch {
     /* storage unavailable or corrupt: fall through */
   }
-  const user = { name: `${pick(ADJECTIVES)} ${pick(ANIMALS)}`, color: pick(PRESENCE_COLORS) };
+  const user = { id: crypto.randomUUID(), name: `${pick(ADJECTIVES)} ${pick(ANIMALS)}`, color: pick(PRESENCE_COLORS) };
   saveLocalUser(user);
   return user;
 }
@@ -71,13 +78,24 @@ export function attributionTitle(item: { createdBy?: string; createdAt?: number 
   return `Added by ${item.createdBy}${item.createdAt ? ` · ${timeAgo(item.createdAt)}` : ''}`;
 }
 
-/** Remote peers (not this tab) that have announced a user. */
+/**
+ * Other people in the room, one entry per browser. Every tab and every reopened document is
+ * a new awareness client, and a closed tab's state lingers until it times out, so one person
+ * can appear several times: keep only their most recently active session, and leave out this
+ * browser's own other tabs. States without a user id (older app versions) count as-is.
+ */
 export function remotePeers(awareness: Awareness): Peer[] {
-  const peers: Peer[] = [];
+  const myId = (awareness.getLocalState() as PresenceState | null)?.user?.id;
+  const lastActive = (clientId: number) => awareness.meta.get(clientId)?.lastUpdated ?? 0;
+  const byPerson = new Map<string | number, Peer>();
   awareness.getStates().forEach((state, clientId) => {
-    if (clientId !== awareness.clientID && state?.user) peers.push({ clientId, ...(state as PresenceState) });
+    const user = (state as PresenceState | undefined)?.user;
+    if (clientId === awareness.clientID || !user || (myId && user.id === myId)) return;
+    const person = user.id ?? clientId;
+    const seen = byPerson.get(person);
+    if (!seen || lastActive(clientId) >= lastActive(seen.clientId)) byPerson.set(person, { clientId, ...(state as PresenceState) });
   });
-  return peers.sort((a, b) => a.clientId - b.clientId);
+  return [...byPerson.values()].sort((a, b) => a.clientId - b.clientId);
 }
 
 /**

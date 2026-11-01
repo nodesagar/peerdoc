@@ -236,13 +236,12 @@ export class DocSyncEngine {
       sender: this.sessionId,
     });
 
-    // Presence: tell the newcomer who's here right now
+    // Presence: introduce ourselves. Only our own state: forwarding everyone we know also
+    // forwarded closed tabs that never said goodbye, so ghosts kept respawning on newcomers.
+    // Everyone reaches everyone (the relay is a shared channel), so nothing is lost.
     const awareness = this.options.awareness;
-    if (awareness && awareness.getStates().size > 0) {
-      transport.sendToPeer(peerId, {
-        type: 'awareness',
-        payload: uint8ArrayToBase64(encodeAwarenessUpdate(awareness, [...awareness.getStates().keys()])),
-      });
+    if (awareness?.getLocalState()) {
+      transport.sendToPeer(peerId, this.localAwarenessMessage());
     }
 
     // 2. Check if we need the PDF file from this newly joined peer.

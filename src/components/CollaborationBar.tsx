@@ -3,7 +3,7 @@ import { HardDrive, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } fr
 import { ActiveTool, SyncStatus } from '../types';
 import { PresenceAvatars } from './PresenceAvatars';
 import type { Awareness } from 'y-protocols/awareness';
-import type { PresenceUser } from '../lib/presence';
+import { usePeers, type PresenceUser } from '../lib/presence';
 import type { RoomAccessApi } from '../hooks/useRoomAccess';
 import { SharePanel } from './SharePanel';
 
@@ -31,6 +31,9 @@ interface CollaborationBarProps {
   access: RoomAccessApi;
 }
 
+/** People, not connections: the same deduped list the avatars show. */
+const countPeople = (peers: unknown[]) => peers.length;
+
 const divider = <div className="h-4 w-px bg-ink/10 shrink-0 hidden sm:block" />;
 const iconBtn = 'btn btn-ghost h-8 w-8 px-0';
 
@@ -52,6 +55,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
   access,
 }) => {
   const shareRef = React.useRef<HTMLDialogElement>(null);
+  const othersOnline = usePeers(presence.awareness, countPeople);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   if (!documentId) {
@@ -91,17 +95,24 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
     <div className="flex items-center flex-nowrap gap-1 sm:gap-1.5 text-caption h-9 shrink-0">
       {/* Sync / P2P Status Indicator */}
       <div className="flex items-center shrink-0">
-        {peerCount > 0 ? (
-          <span className="chip bg-mint" title="Collaborators connected to this document right now">
+        {othersOnline > 0 ? (
+          <span className="chip bg-mint" title="Other people with this document open right now (each browser counts once)">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ink/40"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
             </span>
             <Users className="w-3.5 h-3.5" />
             <span>
-              {peerCount}
+              {othersOnline}
               <span className="hidden sm:inline"> online</span>
             </span>
+          </span>
+        ) : peerCount > 0 ? (
+          // Linked, but their name hasn't arrived yet (a second or so after connecting)
+          <span className="chip bg-mint" title="A collaborator is connecting">
+            <Users className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Connecting…</span>
+            <span className="sr-only sm:hidden">A collaborator is connecting</span>
           </span>
         ) : (
           <span className="chip bg-marigold" title="No collaborators connected. Your changes are saved in this browser and sync when someone joins.">
