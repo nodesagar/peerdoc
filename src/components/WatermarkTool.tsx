@@ -16,13 +16,29 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
   const [rotation, setRotation] = useState(-45);
   const [fontSize, setFontSize] = useState(48);
   const [isProcessing, setIsProcessing] = useState(false);
+  const sessionDocIdRef = React.useRef<string>(crypto.randomUUID());
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type === 'application/pdf') {
+      const nextId = crypto.randomUUID();
+      sessionDocIdRef.current = nextId;
       setFileName(file.name);
       const buffer = await file.arrayBuffer();
-      setFileBuffer(new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
+      setFileBuffer(bytes);
+      onDocumentProcessed({
+        id: nextId,
+        name: file.name,
+        action: 'Opened',
+        size: formatBytes(file.size),
+        timestamp: Date.now(),
+        timeAgo: 'Just now',
+        blob: new Blob([bytes as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'watermark',
+        details: 'Opened in Watermark tool',
+      });
     }
   };
 
@@ -43,13 +59,16 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
       downloadUint8ArrayAsFile(result, outputName);
 
       onDocumentProcessed({
-        id: crypto.randomUUID(),
+        id: sessionDocIdRef.current,
         name: outputName,
         action: 'Watermarked',
         size: formatBytes(result.byteLength),
         timestamp: Date.now(),
         timeAgo: 'Just now',
         blob: new Blob([result as any], { type: 'application/pdf' }),
+        format: 'pdf',
+        tool: 'watermark',
+        details: `Watermark: "${text}"`,
       });
     } catch (err) {
       alert('Error applying watermark: ' + err);
