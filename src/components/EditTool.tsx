@@ -573,7 +573,7 @@ export const EditTool: React.FC<EditToolProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-var(--header-h))]">
+    <div className="flex flex-col workspace-h">
       {/* Top Controls Toolbar: a floating white bar on the canvas */}
       <div className="mx-4 md:mx-6 mt-1 bg-white rounded-3xl shadow-subtle pl-2 pr-2 py-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 z-30">
         <div className="flex flex-wrap items-center gap-2">
