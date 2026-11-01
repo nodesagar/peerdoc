@@ -1,159 +1,178 @@
 # Peer Docs
 
-[![React](https://img.shields.io/badge/React-19-blue?logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-6.2-646CFF?logo=vite)](https://vitejs.dev/)
-[![TailwindCSS](https://img.shields.io/badge/Tailwind-v4-38B2AC?logo=tailwind-css)](https://tailwindcss.com/)
-[![CRDT](https://img.shields.io/badge/CRDT-Yjs-orange)](https://github.com/yjs/yjs)
-[![License](https://img.shields.io/badge/SDG-9.c%20Equitable%20Access-success)](#)
+**Edit PDFs and Word documents together, with no server and no internet required.**
 
-> **Offline-first, peer-to-peer collaborative document editor.**  
-> Users can work offline for weeks, sync directly in any order without central servers, and always converge to the exact same document.  
-> *Built for SDG 9.c: Universal & equitable computing access.*
+Peer Docs is a collaborative document editor that runs entirely in the browser. People can edit the same document at the same time, or separately while offline for days or weeks, and their changes always merge into the same result. Edits travel directly between devices, never through a server that stores or reads them.
+
+> Built for UN Sustainable Development Goal 9.c: universal and affordable access to information technology.
 
 ---
 
-## 1. Architecture Overview
+## Why it exists
 
-Peer Docs decouples edit operations from raw file storage using Conflict-Free Replicated Data Types (CRDTs):
-- **Document Identification**: `documentId = SHA-256(original_pdf_bytes)` names the file and verifies transferred chunks.
-- **Invite-only Rooms (`access.ts`, `roomKey.ts`)**: Whoever opens a PDF owns its room. Each browser has its own P-256 key pairs (private keys non-extractable, kept in IndexedDB). The owner signs a roster that lists the members and seals the random 128-bit room key separately to each member (ECDH, then HKDF, then AES-GCM). Every transport derives its channel from that key, so having the PDF is not enough to join. **Inviting** creates a one-time link (`?doc=<id>#i=<token>&o=<owner>`); its holder knocks on a control channel with a request sealed to the token, and the owner's browser admits them automatically. **Removing** someone rotates the room key and seals the new one to everyone else, so the removed browser can no longer find or read the room. Members pass the newest owner-signed roster to each other, so anyone online brings a returning member up to date. There is no server: the public trackers and relay only ever carry signed or encrypted data. Limits: the owner's browser must be online for an invitee's first join; a removed person keeps what they already had; a member who was offline during a removal can still send their own offline edits to the removed person before they hear about it; if the owner's browser storage is lost, the member list can no longer change.
-- **CRDT Document (`Y.Doc`)**: Manages non-conflicting operational state across nested `Y.Map` structures (`meta`, `pages`, `textOverlays`, `whiteouts`, `redactions`, `signatures`).
-- **Binary Storage (`pdfStore.ts`)**: The raw PDF is stored locally in IndexedDB (`idb-keyval`) and transferred in verified 48KB chunks over WebRTC on-demand.
-- **Offline Persistence (`y-indexeddb`)**: Edits survive browser refreshes, tab closures, and weeks offline.
-- **Dual Transport P2P Sync (`docSync.ts`, `p2pProvider.ts`)**:
-  - **Trystero WebRTC DataChannels**: Peer-to-peer over public BitTorrent trackers with zero custom server requirement.
-  - **BroadcastChannel**: Instantaneous tab-to-tab fallback synchronization for local testing and multi-window work.
-  - **Encrypted MQTT relay (`relayTransport.ts`)**: When WebRTC cannot connect (Wi-Fi client isolation, blocked mDNS, symmetric/CGNAT, no TURN), peers exchange messages through public MQTT brokers (HiveMQ, EMQX). The relay is always connected and carries CRDT edits alongside WebRTC. Payloads are AES-256-GCM encrypted with a key derived from the document ID plus room key and published to a hashed topic, so brokers see only ciphertext. The PDF is pulled via the relay only if it has not arrived over a direct link within a few seconds.
-  - **State-Vector Handshake**: Upon every peer connection, reciprocal state vectors (`Y.encodeStateVector`) and deltas (`Y.encodeStateAsUpdate`) are exchanged, recovering all offline history.
-- **Presence (`presence.ts`)**: Yjs awareness over the same transports shows who is in the room, which tool they have open, their live cursors and what they have selected. Never stored in the document; relay links get at most one presence message per 400 ms so cursor streams can't flood public brokers.
-- **Per-User Undo/Redo**: A `Y.UndoManager` tracks only this user's edits (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, toolbar buttons). Peer edits, IndexedDB loads, `.cdsync` imports and document seeding are never undone.
-- **Installable Offline App (PWA)**: A service worker (`src/sw.js`, generated at build with every asset precached) serves the app shell cache-first, so the editor opens with no network. New versions install in the background and apply when the user clicks **Reload**.
-- **Store-and-Forward (`fileSync.ts`)**: Air-gapped file sync via `.cdsync` files containing idempotent delta updates.
-- **Sync via QR (`qrSync.ts`, `QRSyncModal.tsx`)**: Air-gapped optical sync using animated QR codes (~4 fps) and camera scanning (`qrcode` + `jsqr`), compressing Yjs state updates with `CompressionStream('deflate-raw')` and verifying integrity via SHA-256 session checksums.
-- **Word documents (`src/lib/word/`, `WordEditor.tsx`)**: DOCX (and legacy DOC, converted in the browser) open in a page-view editor. Content lives in the same Y.Doc as `y-prosemirror` fragments (`word:body`, `word:<header/footer part>`), so live sync, offline edits, `.cdsync`, undo and invites work unchanged. The schema mirrors WordprocessingML (paragraph styles, numbering, run properties, tables with merges, pictures); anything not modelled (fields, bookmarks, content controls, shapes, unknown properties) is kept verbatim. Export uses the original package as the template: only the edited body/header/footer XML is rewritten, every other part is written back byte-for-byte. Seeds are deterministic, so peers who import the same file independently merge without duplicating text. Formats are detected by signature in `src/lib/formats.ts`.
-- **True Redaction**: Burns redaction boxes directly into canvas pixels, scrubbing underlying text streams and font glyphs permanently.
+Most collaborative editors assume a reliable connection to a central server. That assumption fails for many people: rural schools, field teams, clinics, offices with restricted networks, or anyone who simply doesn't want their documents on someone else's servers.
 
-```
-+-----------------------------------------------------------------------------------------+
-|                                    Peer Docs                                            |
-+-----------------------------------------------------------------------------------------+
-|                                                                                         |
-|   +-----------------------+     +-----------------------+     +---------------------+   |
-|   |  Edit / Whiteout Tool |     |  Organize / Reorder   |     | True Redaction Tool |   |
-|   +-----------+-----------+     +-----------+-----------+     +----------+----------+   |
-|               |                             |                            |              |
-|               +----------------------+      |      +---------------------+              |
-|                                      |      |      |                                    |
-|                                      v      v      v                                    |
-|                             +-------------------------------+                           |
-|                             |        useCRDTSync Hook       |                           |
-|                             +---------------+---------------+                           |
-|                                             |                                           |
-|                     +-----------------------+-----------------------+                   |
-|                     |                                               |                   |
-|                     v                                               v                   |
-|       +---------------------------+                   +---------------------------+     |
-|       |     Yjs Document Engine   |                   |    Original PDF Store     |     |
-|       |       (schema.ts)         |                   |       (pdfStore.ts)       |     |
-|       +-------------+-------------+                   +-------------+-------------+     |
-|                     |                                               |                   |
-|         +-----------+-----------+                                   |                   |
-|         v                       v                                   v                   |
-|  +--------------+       +---------------+                   +---------------+           |
-|  | y-indexeddb  |       |  Sync Engine  |                   |  48KB Chunker |           |
-|  | (Local IDB)  |       | (docSync.ts)  |                   |   & SHA-256   |           |
-|  +--------------+       +-------+-------+                   +-------+-------+           |
-|                                 |                                   |                   |
-|                +----------------+----------------+                  |                   |
-|                |                                 |                  |                   |
-|                v                                 v                  v                   |
-|      +--------------------+            +-------------------+--------------------+       |
-|      |  BroadcastChannel  |            | Trystero (WebRTC) | .cdsync File Sync  |       |
-|      |    (Local Tabs)    |            |   (Remote P2P)    | (Store & Forward)  |       |
-|      +--------------------+            +-------------------+--------------------+       |
-+-----------------------------------------------------------------------------------------+
+Peer Docs is designed around three promises:
+
+1. **Offline is normal.** You can open, edit and save without a connection. The app itself installs and loads offline.
+2. **No central server.** Devices talk to each other directly. Public infrastructure is used only to help devices find each other, and it only ever sees encrypted data.
+3. **Edits never conflict.** Two people can change the same document in any order, online or off, and both copies end up identical, with nothing lost.
+
+---
+
+## What you can do
+
+**Edit and review PDFs**
+- Change the PDF's existing text in place, or add new text, whiteout and signatures.
+- Highlight, draw, add sticky notes and discuss each one in a comment thread.
+- Reorder, rotate, delete and extract pages.
+- Redact permanently: redacted pages are flattened to an image, so the hidden text is gone, not just covered.
+- Merge, split, compress, watermark and password-protect PDFs.
+
+**Edit Word documents**
+- Open `.docx` and legacy `.doc` files in a page-view editor with styles, lists, tables and images.
+- Export back to `.docx`. Anything the editor doesn't understand is kept exactly as it was.
+
+**Work together**
+- See who is in the document, what tool they are using and where their cursor is.
+- Every item shows who added it and when.
+- Undo and redo only affect your own changes.
+- Invite people with a personal link, and remove them at any time.
+
+**Sync without a network**
+- Export your changes to a small `.cdsync` file and pass it on by USB drive or email.
+- Or sync two devices with no network at all: one shows an animated QR code, the other scans it with its camera.
+
+---
+
+## How it works
+
+### The core idea: the original file plus a log of edits
+
+Peer Docs never edits the original file directly. Instead, each document has two parts:
+
+- **The original file**, stored unchanged on each device. Its SHA-256 hash becomes the document's ID, so every copy can be verified.
+- **A shared record of edits**, kept as a [CRDT](https://crdt.tech/) using [Yjs](https://github.com/yjs/yjs). A CRDT is a data structure designed so that edits made in any order on any device always merge to the same result, without a server deciding who wins.
+
+When you export, the edits are applied to the original file to produce the final PDF or Word document.
+
+```mermaid
+flowchart LR
+    UI["Editors and tools<br/>(PDF, Word, comments, pages)"] --> CRDT["Shared edit record<br/>(Yjs document)"]
+    CRDT <--> IDB[("Browser storage<br/>(IndexedDB)")]
+    CRDT <--> Sync["Sync engine"]
+    Sync <--> RTC["Direct WebRTC link"]
+    Sync <--> Relay["Encrypted relay"]
+    Sync <--> Tabs["Other tabs"]
+    Sync <--> Offline[".cdsync file / QR code"]
+    File[("Original file<br/>(verified by hash)")] --> Export["Export"]
+    CRDT --> Export
 ```
 
+### Syncing between devices
+
+When two devices connect, they first compare what each has already seen and send each other only what is missing. This is how weeks of offline work catch up in seconds. After that, every new edit is sent live.
+
+Edits can travel several ways, and the app uses whichever work:
+
+| Route | When it's used |
+| :--- | :--- |
+| **Direct WebRTC link** | The normal path. Devices find each other through public WebTorrent trackers, then connect directly. |
+| **Encrypted MQTT relay** | When a direct link can't be made (strict Wi-Fi, carrier NAT, firewalls). Messages pass through public MQTT brokers, encrypted end to end so the brokers see only ciphertext. |
+| **BroadcastChannel** | Between tabs of the same browser. |
+| **`.cdsync` file** | When devices are never online at the same time. |
+| **Animated QR code** | When there is no network at all. Carries edits only, so both devices need the original file already. |
+
+The original file is sent once, in small chunks that are checked against the document's hash before use.
+
+### Who can join
+
+Having a copy of the file is not enough to join its room.
+
+- Whoever opens a document first owns its room. Each browser has its own cryptographic identity, stored locally and never exported.
+- The owner keeps a signed member list and a secret room key. Every connection route is derived from that key, so outsiders can't find or read the room.
+- **Inviting** creates a one-time link. When the invitee opens it, the owner's browser admits them automatically.
+- **Removing** someone replaces the room key and shares the new one with everyone else, which locks the removed person out.
+
+### Offline by design
+
+- Edits are saved to browser storage (IndexedDB) as you work, so they survive closed tabs, restarts and long offline periods.
+- The app is an installable PWA. A service worker caches the whole app, so it opens with no network. Updates download in the background and apply when you choose to reload.
+
 ---
 
-## 2. Key Features
+## Project structure
 
-1. **Dashboard & Demo Loader**: Load sample confidential agreement with 1 click, open local PDF, or join a room by pasting a personal invite link (`?doc=<id>#i=<token>&o=<owner>`).
-2. **Text & Eraser Tool (`EditTool.tsx`)**: In-place text editing of original PDF content, text overlays with rich typography (Helvetica, Times, Courier, etc.), font sizes, colors, and whiteout boxes with nested field-level merge protection.
-3. **Fractional Index Page Organizer (`OrganizeTool.tsx`)**: Reorder pages deterministically using fractional indices, rotate clockwise/counter-clockwise, restore/delete pages, and extract selections.
-4. **Permanent True Redactions (`RedactTool.tsx`)**: Renders page canvas, paints solid black boxes directly into pixel data, and replaces the page with a clean rasterized image. Permanently strips all sensitive metadata.
-5. **Digital Signature Tool (`SignTool.tsx`)**: Draw signatures, generate cursive typed signatures, or upload PNGs; position and stamp onto any page.
-6. **Local Single-shot Utilities**: Merge multiple PDFs, compress PDFs (downscale and re-encode JPEG photos/scans per level, object streams), split pages, apply diagonal text watermarks, and password-encrypt PDFs.
-7. **Review & Comments (`Annotations.tsx`)**: Highlight, box, freehand and sticky-note markup; every annotation is a comment thread with replies, resolve/reopen and a Comments panel. Exported PDFs keep the markup and turn open threads into real PDF sticky notes.
-8. **Presence & Attribution**: Avatars of everyone in the room (click yours to rename), live cursors and selections in the editor, and "Added by … · 5 minutes ago" on every item.
-9. **Store-and-Forward Sync (`CollaborationBar.tsx`)**: Export `.cdsync` files to transfer updates via USB flash drives or email when peers are never online at the same time.
-10. **Word Document Collaboration (`WordEditor.tsx`)**: Open and collaboratively edit DOCX and legacy DOC files in a page-view editor powered by `y-prosemirror`, preserving WordprocessingML structure and lossless export.
-11. **Installable PWA & Offline Pre-caching**: Offline-first service worker precaches application assets for instant offline startup and background update prompts.
+```
+src/
+├── App.tsx               App shell: opening documents, routing between tools
+├── components/           Editors and tools (EditTool, WordEditor, OrganizeTool, RedactTool, ...)
+├── hooks/                React bindings for sync, access and layout
+├── lib/
+│   ├── crdt/             Shared edit record, sync engine, transports, access control, file and QR sync
+│   ├── pdf/              Reading and rewriting PDF text in place
+│   ├── word/             DOCX/DOC import, editing schema and export
+│   ├── formats.ts        File type detection
+│   └── presence.ts       Who's here, cursors and selections
+├── utils/                PDF processing (export, redaction, compression, merge)
+├── sw.js                 Service worker template
+└── test/                 Vitest suite
+```
 
 ---
 
-## 3. Getting Started
+## Getting started
 
-### Prerequisites
-- **Node.js**: 18+ (tested with Node v25.9.0)
-- **Package Manager**: npm or pnpm
-- **Browser**: Modern browser with WebRTC and IndexedDB support (Chrome, Edge, Firefox, Safari)
+**Requirements:** Node.js 20 or later, and a modern browser (Chrome, Edge, Firefox or Safari).
 
-### Installation
 ```bash
 git clone https://github.com/nodesagar/peerdoc.git
 cd peerdoc
 npm install
+npm run dev
 ```
 
-### Development Scripts
-| Command | Description |
+The app runs at `http://localhost:3000`.
+
+| Command | What it does |
 | :--- | :--- |
-| `npm run dev` | Starts Vite dev server at `http://localhost:3000` (host enabled) |
-| `npm run build` | Validates TypeScript and builds the production bundle |
-| `npm test` | Runs the Vitest test suite |
-| `npm run test:watch` | Runs Vitest in interactive watch mode |
-| `npm run lint` | Typechecks codebase via `tsc --noEmit` |
-| `npm run preview` | Previews the production build locally |
+| `npm run dev` | Start the development server |
+| `npm run build` | Type-check and build for production |
+| `npm run preview` | Serve the production build locally |
+| `npm test` | Run the test suite |
+| `npm run lint` | Type-check without building |
 
-### Running Tests
-Peer Docs includes a comprehensive Vitest test suite covering fractional indexing, multi-peer offline convergence, state-vector handshakes, `.cdsync` idempotency, and binary chunk verification.
-```bash
-npm test
-```
+The tests cover the parts where bugs would be most costly: offline convergence between peers, the sync handshake, invite and removal, encrypted relay, file and QR sync, and PDF and Word round-trips.
 
-### Building for Production
-```bash
-npm run build
-```
+### Try collaboration locally
 
----
+1. Open `http://localhost:3000` and click **Try a sample PDF**.
+2. Click the share button in the top bar, enter a name and click **Invite**. A personal link is copied.
+3. Open that link in a different browser profile or a private window, so it has its own identity. It joins automatically.
+4. Edit in both windows and watch the changes appear live.
+5. To test offline merging, disconnect one window, edit both, then reconnect. Both copies converge.
 
-## 4. Multi-Peer Verification Procedure
+### Sync two devices by QR code
 
-To verify real-time and offline peer convergence:
+Both devices must already have the same original file open.
 
-1. Open `http://localhost:3000` in **Browser Profile A** (or Window 1).
-2. Click **"Load Demo Agreement"**.
-3. In the header `CollaborationBar`, click **Share**, type who the invite is for, and click **Invite**. This copies a one-time link (e.g. `http://localhost:3000/?doc=33842...#i=...&o=...`).
-4. Open the copied URL in **Browser Profile B** (a different profile or a private window, so it has its own identity). Profile A admits it automatically. To test removal, click the remove button next to that person in **Share**.
-5. Notice both tabs immediately show **"1 Peer"** and green sync indicators!
-6. Disconnect Window 2 from network / close tab, make edits in both windows offline.
-7. Reconnect or exchange `.cdsync` files: both documents automatically converge to identical state without data loss!
+1. On both devices, click **Sync via QR** in the top bar.
+2. Leave device A on **Send**. Switch device B to **Receive** and point its camera at A's screen until it shows **Merged ✓**.
+3. Click **Swap roles** on both devices and repeat, so A also receives B's edits.
+
+The QR code cycles through a sequence of frames, and the receiver collects them in any order. Scanning uses the browser's built-in barcode detector where available and falls back to a JavaScript decoder elsewhere. If there are too many edits to fit, the app suggests a `.cdsync` file instead. Camera access needs a secure context, so use `localhost` or HTTPS.
 
 ---
 
-## 5. Sync via QR (Offline Optical Sync)
+## Known limitations
 
-Two devices with a screen and a camera can merge their CRDT edits in airplane mode with zero network, server, or USB drive:
+- **First join needs the owner online.** After that, any member can bring others up to date.
+- **Removal is not retroactive.** A removed person keeps whatever they had already received.
+- **The owner's browser is the source of membership.** If its storage is cleared, the member list can no longer change.
+- **QR sync suits small batches of edits.** Larger changes should use a `.cdsync` file instead.
 
-1. Open the **same base document** (matching SHA-256 `documentId`) on both devices and make offline edits on each.
-2. Click **Sync via QR** in the top `CollaborationBar`.
-3. **Round 1**: Device A stays on the **Send** tab (cycling `CD1|<docIdShort>|<sessionId>|<index>|<total>|<chunk>` QR frames at ~4 fps) while Device B switches to **Receive** and points its camera at Device A's screen until it shows **Merged ✓**.
-4. **Round 2**: Click **Swap roles** on both devices so Device B sends its newly merged state back to Device A. Both devices now show **Merged ✓** with the exact same state hash.
+---
 
-> **Notes & Constraints**:
-> - **Edits only**: QR sync carries compressed Yjs CRDT updates only, never the raw PDF binary. Both devices must already have the base document loaded.
-> - **Payload limit**: Updates exceeding 30 QR frames automatically prompt you to use `.cdsync` file export instead.
-> - **Camera permissions**: Browser camera access (`getUserMedia`) requires a secure context (**HTTPS** or **`localhost`**).
+## Built with
+
+React 19, TypeScript, Vite and Tailwind CSS · Yjs and y-indexeddb for the shared edit record · Trystero (WebRTC) and MQTT for transport · pdf-lib and PDF.js for PDFs · ProseMirror for Word editing.
