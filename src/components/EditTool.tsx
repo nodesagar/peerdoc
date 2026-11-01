@@ -147,6 +147,7 @@ const toggle = (on: boolean) => (on ? 'bg-ink text-white' : 'bg-cloud text-graph
 
 interface EditToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
+  onSaveDocument?: (doc: ProcessedDoc) => void;
   rawPdfBytes: Uint8Array | null;
   documentId: string | null;
   fileName: string;
@@ -156,6 +157,7 @@ interface EditToolProps {
 
 export const EditTool: React.FC<EditToolProps> = ({
   onDocumentProcessed,
+  onSaveDocument,
   rawPdfBytes,
   documentId,
   fileName,
@@ -266,17 +268,11 @@ export const EditTool: React.FC<EditToolProps> = ({
 
   const colors = ['#ffffff', '#808080', '#f64932', '#3b82f6', '#10b981', '#a855f7', '#f97316', '#06b6d4', '#1a1c1c'];
 
-  // Convert rawPdfBytes to Blob URL to prevent PDF.js Web Worker ArrayBuffer transfer detachment
-  const pdfBlobUrl = React.useMemo(() => {
+  // Pass a Blob to react-pdf so PDF.js reads a fresh ArrayBuffer copy without URL revocation issues in StrictMode
+  const pdfFile = React.useMemo(() => {
     if (!rawPdfBytes) return null;
-    return URL.createObjectURL(new Blob([rawPdfBytes as any], { type: 'application/pdf' }));
+    return new Blob([rawPdfBytes as BlobPart], { type: 'application/pdf' });
   }, [rawPdfBytes]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    };
-  }, [pdfBlobUrl]);
 
   // In-place text editing: runs of the original file, and the file as displayed with edits applied
   const textModel = usePdfTextModel(rawPdfBytes);
@@ -494,17 +490,14 @@ export const EditTool: React.FC<EditToolProps> = ({
     }
   };
 
-  const handleExportPDF = async () => {
+  const handleSavePDF = async () => {
     if (!rawPdfBytes) return;
     try {
       setProcessing(true);
       const convergedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
-      const outputName = fileName.replace(/\.pdf$/i, '') + '-edited.pdf';
-      downloadUint8ArrayAsFile(convergedBytes, outputName);
-
-      onDocumentProcessed({
+      const docRecord: ProcessedDoc = {
         id: documentId || crypto.randomUUID(),
-        name: outputName,
+        name: fileName,
         action: 'Edited',
         size: formatBytes(convergedBytes.byteLength),
         timestamp: Date.now(),
@@ -514,9 +507,29 @@ export const EditTool: React.FC<EditToolProps> = ({
         format: 'pdf',
         pageCount: numPages,
         tool: 'edit',
-      });
+      };
+      if (onSaveDocument) {
+        onSaveDocument(docRecord);
+      } else {
+        onDocumentProcessed(docRecord);
+      }
     } catch (err) {
-      console.error('Failed to export edited PDF:', err);
+      console.error('Failed to save edited PDF:', err);
+      alert('Error saving PDF from CRDT state: ' + err);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!rawPdfBytes) return;
+    try {
+      setProcessing(true);
+      const convergedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
+      const outputName = fileName.replace(/\.pdf$/i, '') + '-edited.pdf';
+      downloadUint8ArrayAsFile(convergedBytes, outputName);
+    } catch (err) {
+      console.error('Failed to download edited PDF:', err);
       alert('Error building final PDF from CRDT state: ' + err);
     } finally {
       setProcessing(false);
@@ -721,12 +734,23 @@ export const EditTool: React.FC<EditToolProps> = ({
           </button>
 
           <button
-            onClick={handleExportPDF}
+            onClick={handleSavePDF}
+            disabled={processing}
+            className="btn btn-secondary h-[34px] px-4 text-caption"
+            title="Save document to cache and end active session"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{processing ? 'Saving...' : 'Save'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadPDF}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
+            title="Download PDF to your device (keeps document open in workspace)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{processing ? 'Rendering...' : 'Save & Download'}</span>
+            <span>{processing ? 'Rendering...' : 'Download'}</span>
           </button>
         </div>
       </div>
@@ -739,7 +763,7 @@ export const EditTool: React.FC<EditToolProps> = ({
         className="flex-1 overflow-auto p-8 flex justify-center-safe items-start"
       >
         <Document
-          file={pdfBlobUrl}
+          file={pdfFile}
           onLoadSuccess={({ numPages: count }) => setNumPages(count)}
           className="flex flex-col items-center space-y-8"
         >

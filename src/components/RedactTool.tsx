@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   Trash2,
   Download,
+  Check,
   Square,
   FileCode,
   Lock,
@@ -27,6 +28,7 @@ import { SyncWaitingCard } from './SyncWaitingCard';
 
 interface RedactToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
+  onSaveDocument?: (doc: ProcessedDoc) => void;
   rawPdfBytes: Uint8Array | null;
   documentId: string | null;
   fileName: string;
@@ -36,6 +38,7 @@ interface RedactToolProps {
 
 export const RedactTool: React.FC<RedactToolProps> = ({
   onDocumentProcessed,
+  onSaveDocument,
   rawPdfBytes,
   documentId,
   fileName,
@@ -66,16 +69,10 @@ export const RedactTool: React.FC<RedactToolProps> = ({
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
   const pdfProxyRef = useRef<any>(null);
 
-  const pdfBlobUrl = React.useMemo(() => {
+  const pdfFile = React.useMemo(() => {
     if (!rawPdfBytes) return null;
-    return URL.createObjectURL(new Blob([rawPdfBytes as any], { type: 'application/pdf' }));
+    return new Blob([rawPdfBytes as BlobPart], { type: 'application/pdf' });
   }, [rawPdfBytes]);
-
-  React.useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    };
-  }, [pdfBlobUrl]);
 
   // Metadata belongs to a specific PDF
   React.useEffect(() => setMetadata(null), [rawPdfBytes]);
@@ -186,17 +183,14 @@ export const RedactTool: React.FC<RedactToolProps> = ({
     if (!found) alert(`No matches for "${searchText.trim()}" (scanned/image-only text cannot be searched).`);
   };
 
-  const handleExportRedacted = async () => {
+  const handleSaveRedacted = async () => {
     if (!rawPdfBytes) return;
     try {
       setProcessing(true);
       const redactedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
-      const outputName = fileName.replace(/\.pdf$/i, '') + '-redacted.pdf';
-      downloadUint8ArrayAsFile(redactedBytes, outputName);
-
-      onDocumentProcessed({
+      const docRecord: ProcessedDoc = {
         id: documentId || crypto.randomUUID(),
-        name: outputName,
+        name: fileName,
         action: 'Redacted',
         size: formatBytes(redactedBytes.byteLength),
         timestamp: Date.now(),
@@ -206,7 +200,26 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         format: 'pdf',
         pageCount: numPages,
         tool: 'redact',
-      });
+      };
+      if (onSaveDocument) {
+        onSaveDocument(docRecord);
+      } else {
+        onDocumentProcessed(docRecord);
+      }
+    } catch (err) {
+      alert('Error saving redacted PDF: ' + err);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDownloadRedacted = async () => {
+    if (!rawPdfBytes) return;
+    try {
+      setProcessing(true);
+      const redactedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
+      const outputName = fileName.replace(/\.pdf$/i, '') + '-redacted.pdf';
+      downloadUint8ArrayAsFile(redactedBytes, outputName);
     } catch (err) {
       alert('Error applying redaction: ' + err);
     } finally {
@@ -322,12 +335,23 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           </div>
 
           <button
-            onClick={handleExportRedacted}
+            onClick={handleSaveRedacted}
+            disabled={processing}
+            className="btn btn-secondary h-[34px] px-4 text-caption"
+            title="Save redacted document to cache and end active session"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{processing ? 'Saving...' : 'Save'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadRedacted}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
+            title="Burn redactions and download PDF to your device (keeps document open in workspace)"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{processing ? 'Sanitizing Pixels...' : 'Burn Redactions & Download'}</span>
+            <span>{processing ? 'Sanitizing Pixels...' : 'Download'}</span>
           </button>
         </div>
       </div>
@@ -378,7 +402,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           className="flex-1 overflow-auto p-8 flex justify-center-safe items-start cursor-crosshair"
         >
           <Document
-            file={pdfBlobUrl}
+            file={pdfFile}
             onLoadSuccess={(pdf) => {
               pdfProxyRef.current = pdf;
               setNumPages(pdf.numPages);

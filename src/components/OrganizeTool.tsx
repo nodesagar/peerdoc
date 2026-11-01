@@ -9,6 +9,7 @@ import { SyncWaitingCard } from './SyncWaitingCard';
 
 interface OrganizeToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
+  onSaveDocument?: (doc: ProcessedDoc) => void;
   rawPdfBytes: Uint8Array | null;
   documentId: string | null;
   fileName: string;
@@ -18,6 +19,7 @@ interface OrganizeToolProps {
 
 export const OrganizeTool: React.FC<OrganizeToolProps> = ({
   onDocumentProcessed,
+  onSaveDocument,
   rawPdfBytes,
   documentId,
   fileName,
@@ -27,16 +29,10 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const pdfBlobUrl = React.useMemo(() => {
+  const pdfFile = React.useMemo(() => {
     if (!rawPdfBytes) return null;
-    return URL.createObjectURL(new Blob([rawPdfBytes as any], { type: 'application/pdf' }));
+    return new Blob([rawPdfBytes as BlobPart], { type: 'application/pdf' });
   }, [rawPdfBytes]);
-
-  React.useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    };
-  }, [pdfBlobUrl]);
 
   // Derive current page order and rotations from CRDT
   // crdt.pages is already sorted by fractional index order
@@ -94,17 +90,14 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
     }
   };
 
-  const handleExportConverged = async () => {
+  const handleSaveOrganized = async () => {
     if (!rawPdfBytes) return;
     try {
       setIsProcessing(true);
       const convergedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
-      const outputName = fileName.replace(/\.pdf$/i, '') + '-organized.pdf';
-      downloadUint8ArrayAsFile(convergedBytes, outputName);
-
-      onDocumentProcessed({
+      const docRecord: ProcessedDoc = {
         id: documentId || crypto.randomUUID(),
-        name: outputName,
+        name: fileName,
         action: 'Organized',
         size: formatBytes(convergedBytes.byteLength),
         timestamp: Date.now(),
@@ -114,7 +107,27 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
         format: 'pdf',
         pageCount: crdt.pages.filter((p) => !p.deleted).length,
         tool: 'organize',
-      });
+      };
+      if (onSaveDocument) {
+        onSaveDocument(docRecord);
+      } else {
+        onDocumentProcessed(docRecord);
+      }
+    } catch (err) {
+      console.error('Failed to save organized PDF:', err);
+      alert('Error saving organized PDF: ' + err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDownloadOrganized = async () => {
+    if (!rawPdfBytes) return;
+    try {
+      setIsProcessing(true);
+      const convergedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
+      const outputName = fileName.replace(/\.pdf$/i, '') + '-organized.pdf';
+      downloadUint8ArrayAsFile(convergedBytes, outputName);
     } catch (err) {
       console.error('Failed to export organized PDF:', err);
       alert('Error building organized PDF: ' + err);
@@ -236,19 +249,30 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           </div>
 
           <button
-            onClick={handleExportConverged}
+            onClick={handleSaveOrganized}
+            disabled={isProcessing}
+            className="btn btn-secondary h-[34px] px-4 text-caption"
+            title="Save document to cache and end active session"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{isProcessing ? 'Saving...' : 'Save'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadOrganized}
             disabled={isProcessing}
             className="btn btn-primary h-[34px] px-4 text-caption"
+            title="Download organized PDF to your device (keeps document open in workspace)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{isProcessing ? 'Processing...' : 'Save & Download'}</span>
+            <span>{isProcessing ? 'Processing...' : 'Download'}</span>
           </button>
         </div>
       </div>
 
       {/* Thumbnails Grid with Dnd: pages laid out on a dotted cutting mat */}
       <div className="dot-grid bg-white/40 rounded-4xl ring-1 ring-ink/5 p-6 md:p-10 min-h-[500px]">
-        <Document file={pdfBlobUrl}>
+        <Document file={pdfFile}>
           <PageThumbnailGrid
             pageOrder={pageOrder}
             selectedPages={selectedPages}

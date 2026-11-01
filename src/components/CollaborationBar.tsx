@@ -1,6 +1,6 @@
 import React from 'react';
 import { WifiOff, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
-import { SyncStatus } from '../types';
+import { ActiveTool, SyncStatus } from '../types';
 import { PresenceAvatars } from './PresenceAvatars';
 import type { Awareness } from 'y-protocols/awareness';
 import type { PresenceUser } from '../lib/presence';
@@ -14,7 +14,10 @@ export interface PresenceProps {
 }
 
 interface CollaborationBarProps {
+  activeTool?: ActiveTool;
   documentId: string | null;
+  fileName?: string;
+  onOpenActiveDoc?: () => void;
   syncStatus: SyncStatus;
   peerCount: number;
   servingCount?: number;
@@ -32,7 +35,10 @@ const divider = <div className="h-4 w-px bg-ink/10 shrink-0 hidden sm:block" />;
 const iconBtn = 'btn btn-ghost h-8 w-8 px-0';
 
 export const CollaborationBar: React.FC<CollaborationBarProps> = ({
+  activeTool,
   documentId,
+  fileName,
+  onOpenActiveDoc,
   syncStatus,
   peerCount,
   servingCount = 0,
@@ -54,6 +60,20 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         <FolderSync className="w-3.5 h-3.5" />
         <span>No active document</span>
       </div>
+    );
+  }
+
+  if (activeTool === 'dashboard') {
+    return (
+      <button
+        type="button"
+        onClick={onOpenActiveDoc}
+        title={fileName ? `Active document: ${fileName} — Click to open in editor` : 'Active document'}
+        className="flex items-center gap-1.5 text-caption font-medium text-ink px-3 h-9 rounded-full bg-mint hover:brightness-95 transition-all"
+      >
+        <FolderSync className="w-3.5 h-3.5" />
+        <span>Active document</span>
+      </button>
     );
   }
 

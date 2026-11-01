@@ -23,6 +23,7 @@ import { SyncWaitingCard } from './SyncWaitingCard';
 
 interface SignToolProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
+  onSaveDocument?: (doc: ProcessedDoc) => void;
   rawPdfBytes: Uint8Array | null;
   documentId: string | null;
   fileName: string;
@@ -32,6 +33,7 @@ interface SignToolProps {
 
 export const SignTool: React.FC<SignToolProps> = ({
   onDocumentProcessed,
+  onSaveDocument,
   rawPdfBytes,
   documentId,
   fileName,
@@ -55,16 +57,10 @@ export const SignTool: React.FC<SignToolProps> = ({
   const { pageZoom, onPageLoad } = usePageFit(containerRef, zoomLevel);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  const pdfBlobUrl = React.useMemo(() => {
+  const pdfFile = React.useMemo(() => {
     if (!rawPdfBytes) return null;
-    return URL.createObjectURL(new Blob([rawPdfBytes as any], { type: 'application/pdf' }));
+    return new Blob([rawPdfBytes as BlobPart], { type: 'application/pdf' });
   }, [rawPdfBytes]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    };
-  }, [pdfBlobUrl]);
 
   // Initialize drawing canvas
   useEffect(() => {
@@ -187,17 +183,14 @@ export const SignTool: React.FC<SignToolProps> = ({
     setStartY(y);
   };
 
-  const handleExportSigned = async () => {
+  const handleSaveSigned = async () => {
     if (!rawPdfBytes) return;
     try {
       setProcessing(true);
       const signedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
-      const outputName = fileName.replace(/\.pdf$/i, '') + '-signed.pdf';
-      downloadUint8ArrayAsFile(signedBytes, outputName);
-
-      onDocumentProcessed({
+      const docRecord: ProcessedDoc = {
         id: documentId || crypto.randomUUID(),
-        name: outputName,
+        name: fileName,
         action: 'Signed',
         size: formatBytes(signedBytes.byteLength),
         timestamp: Date.now(),
@@ -207,7 +200,26 @@ export const SignTool: React.FC<SignToolProps> = ({
         format: 'pdf',
         pageCount: numPages,
         tool: 'sign',
-      });
+      };
+      if (onSaveDocument) {
+        onSaveDocument(docRecord);
+      } else {
+        onDocumentProcessed(docRecord);
+      }
+    } catch (err) {
+      alert('Error saving signed PDF: ' + err);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDownloadSigned = async () => {
+    if (!rawPdfBytes) return;
+    try {
+      setProcessing(true);
+      const signedBytes = await buildConvergedPDF(rawPdfBytes, crdt.snapshot);
+      const outputName = fileName.replace(/\.pdf$/i, '') + '-signed.pdf';
+      downloadUint8ArrayAsFile(signedBytes, outputName);
     } catch (err) {
       alert('Error signing PDF: ' + err);
     } finally {
@@ -358,12 +370,23 @@ export const SignTool: React.FC<SignToolProps> = ({
           </div>
 
           <button
-            onClick={handleExportSigned}
+            onClick={handleSaveSigned}
+            disabled={processing}
+            className="btn btn-secondary h-[34px] px-4 text-caption"
+            title="Save signed document to cache and end active session"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{processing ? 'Saving...' : 'Save'}</span>
+          </button>
+
+          <button
+            onClick={handleDownloadSigned}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
+            title="Download signed PDF to your device (keeps document open in workspace)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{processing ? 'Signing...' : 'Save & Download'}</span>
+            <span>{processing ? 'Signing...' : 'Download'}</span>
           </button>
         </div>
       </div>
@@ -375,7 +398,7 @@ export const SignTool: React.FC<SignToolProps> = ({
         className="flex-1 overflow-auto p-8 flex justify-center-safe items-start"
       >
         <Document
-          file={pdfBlobUrl}
+          file={pdfFile}
           onLoadSuccess={({ numPages: count }) => setNumPages(count)}
           className="flex flex-col items-center space-y-8"
         >

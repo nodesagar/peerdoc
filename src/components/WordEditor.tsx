@@ -32,6 +32,7 @@ import {
   Image as ImageIcon,
   Link,
   Download,
+  Check,
   Printer,
   ZoomIn,
   ZoomOut,
@@ -214,6 +215,7 @@ const TableGridPicker: React.FC<{ onPick: (rows: number, cols: number) => void }
 
 interface WordEditorProps {
   onDocumentProcessed: (doc: ProcessedDoc) => void;
+  onSaveDocument?: (doc: ProcessedDoc) => void;
   /** Original file (DOCX or DOC); the template for export */
   bytes: Uint8Array | null;
   documentId: string | null;
@@ -222,7 +224,7 @@ interface WordEditorProps {
   onUploadFile?: (file: File) => void;
 }
 
-export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, bytes, documentId, fileName, crdt, onUploadFile }) => {
+export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, onSaveDocument, bytes, documentId, fileName, crdt, onUploadFile }) => {
   const opened = useMemo((): { pkg: WordPackage | null; error: string | null } => {
     if (!bytes) return { pkg: null, error: null };
     try {
@@ -406,28 +408,28 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, byt
       return true;
     });
 
-  const handleDownload = () => {
-    if (!pkg || !doc) return;
+  const buildWordExport = () => {
+    if (!pkg || !doc) return null;
+    const parts: Record<string, WordNodeJSON> = {};
+    for (const part of editableParts(pkg)) {
+      const view = viewsRef.current.find((v) => v.part === part)?.view;
+      const fragment = doc.getXmlFragment(fragmentFor(pkg, part));
+      if (view) parts[part] = view.state.doc.toJSON() as WordNodeJSON;
+      else if (fragment.length) parts[part] = yXmlFragmentToProsemirrorJSON(fragment) as WordNodeJSON;
+    }
+    const out = exportDocx(pkg, { parts });
+    const blob = new Blob([out as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    return { out, blob };
+  };
+
+  const handleSave = () => {
     try {
-      const parts: Record<string, WordNodeJSON> = {};
-      for (const part of editableParts(pkg)) {
-        const view = viewsRef.current.find((v) => v.part === part)?.view;
-        const fragment = doc.getXmlFragment(fragmentFor(pkg, part));
-        if (view) parts[part] = view.state.doc.toJSON() as WordNodeJSON;
-        else if (fragment.length) parts[part] = yXmlFragmentToProsemirrorJSON(fragment) as WordNodeJSON;
-      }
-      const out = exportDocx(pkg, { parts });
-      const name = `${fileName.replace(/\.(docx?|pdf)$/i, '')}-edited.docx`;
-      const blob = new Blob([out as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      onDocumentProcessed({
+      const built = buildWordExport();
+      if (!built) return;
+      const { out, blob } = built;
+      const docRecord: ProcessedDoc = {
         id: documentId || crypto.randomUUID(),
-        name,
+        name: fileName,
         action: 'Edited',
         size: formatBytes(out.byteLength),
         timestamp: Date.now(),
@@ -437,7 +439,30 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, byt
         format: 'docx',
         tool: 'edit',
         details: `Word document • ${stats.words.toLocaleString()} words`,
-      });
+      };
+      if (onSaveDocument) {
+        onSaveDocument(docRecord);
+      } else {
+        onDocumentProcessed(docRecord);
+      }
+    } catch (err) {
+      console.error('Word save failed:', err);
+      alert('Could not save the Word file: ' + (err instanceof Error ? err.message : err));
+    }
+  };
+
+  const handleDownload = () => {
+    try {
+      const built = buildWordExport();
+      if (!built) return;
+      const { blob } = built;
+      const name = `${fileName.replace(/\.(docx?|pdf)$/i, '')}-edited.docx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       console.error('Word export failed:', err);
       alert('Could not build the Word file: ' + (err instanceof Error ? err.message : err));
@@ -693,12 +718,28 @@ export const WordEditor: React.FC<WordEditorProps> = ({ onDocumentProcessed, byt
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
           <button type="button" onClick={handlePrint} className="btn btn-ghost h-[32px] px-3 text-caption" title="Print or save as PDF">
             <Printer className="w-3.5 h-3.5" />
             <span className="hidden 2xl:inline">Print / PDF</span>
           </button>
-          <button type="button" onClick={handleDownload} disabled={!ready} className="btn btn-primary h-[32px] px-4 text-caption">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!ready}
+            className="btn btn-secondary h-[32px] px-3.5 text-caption"
+            title="Save document to cache and end active session"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Save</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={!ready}
+            className="btn btn-primary h-[32px] px-4 text-caption"
+            title="Download .docx to your device (keeps document open in workspace)"
+          >
             <Download className="w-3.5 h-3.5" />
             <span>Download .docx</span>
           </button>

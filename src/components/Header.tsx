@@ -10,6 +10,7 @@ interface HeaderProps {
   setActiveTool: (tool: ActiveTool) => void;
   onOpenPrivacyModal: () => void;
   documentId: string | null;
+  fileName?: string;
   syncStatus: SyncStatus;
   peerCount: number;
   servingCount?: number;
@@ -30,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   setActiveTool,
   onOpenPrivacyModal,
   documentId,
+  fileName,
   syncStatus,
   peerCount,
   servingCount,
@@ -125,7 +127,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right side: Collaboration Bar & Privacy */}
         <div className="flex items-center gap-1.5 shrink-0">
           <CollaborationBar
+            activeTool={activeTool}
             documentId={documentId}
+            fileName={fileName}
+            onOpenActiveDoc={() => setActiveTool('edit')}
             syncStatus={syncStatus}
             peerCount={peerCount}
             servingCount={servingCount}
