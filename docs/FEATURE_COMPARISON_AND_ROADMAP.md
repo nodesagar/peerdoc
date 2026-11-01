@@ -1,4 +1,4 @@
-# EditorDoc P2P — Competitive Feature Comparison & Upgrade Roadmap
+# Peer Docs — Competitive Feature Comparison & Upgrade Roadmap
 
 _Prepared 2026-10-31 · baseline commit `42f31bc`_
 
@@ -71,9 +71,9 @@ Real-time shared viewing and annotation by public link or invite, in-document ch
 
 ---
 
-## 3. Master feature list vs. EditorDoc P2P
+## 3. Master feature list vs. Peer Docs
 
-Legend: ✅ has · ◐ partial · ❌ missing. Columns: **SP** Stirling-PDF, **BP** BentoPDF, **OO** ONLYOFFICE, **DM** Documenso, **XO** Xodo, **Us** EditorDoc P2P.
+Legend: ✅ has · ◐ partial · ❌ missing. Columns: **SP** Stirling-PDF, **BP** BentoPDF, **OO** ONLYOFFICE, **DM** Documenso, **XO** Xodo, **Us** Peer Docs.
 
 ### 3.1 Collaboration & sync
 | Feature | SP | BP | OO | DM | XO | Us |

@@ -88,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
               setActiveTool('dashboard');
               setIsMobileMenuOpen(false);
             })}
-            aria-label="EditorDoc home"
+            aria-label="Peer Docs home"
             className="flex items-center gap-2.5 group shrink-0 rounded-full pr-1"
           >
             <div className="w-9 h-9 rounded-[11px] bg-ink flex items-center justify-center text-white transition-transform duration-300 group-hover:-rotate-6">
@@ -100,7 +100,7 @@ export const Header: React.FC<HeaderProps> = ({
               </svg>
             </div>
             <div className="hidden lg:flex items-center">
-              <span className="text-lg font-semibold tracking-[-0.45px] text-ink">EditorDoc</span>
+              <span className="text-lg font-semibold tracking-[-0.45px] text-ink">Peer Docs</span>
             </div>
           </div>
 
@@ -146,11 +146,11 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             onClick={onOpenPrivacyModal}
-            aria-label="P2P Guarantee"
+            aria-label="Privacy & security"
             className="hidden sm:inline-flex btn btn-ghost h-9 px-3 text-caption"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span className="hidden xl:inline">P2P Guarantee</span>
+            <span className="hidden xl:inline">Privacy</span>
           </button>
 
           {/* Mobile hamburger */}
@@ -192,13 +192,13 @@ export const Header: React.FC<HeaderProps> = ({
                 }}
                 className={`${menuItem} text-graphite hover:bg-linen hover:text-ink`}
               >
-                Export .cdsync
+                Export sync file (.cdsync)
               </button>
               <button
                 onClick={() => syncFileRef.current?.click()}
                 className={`${menuItem} text-graphite hover:bg-linen hover:text-ink`}
               >
-                Import .cdsync
+                Import sync file (.cdsync)
               </button>
               <input
                 ref={syncFileRef}

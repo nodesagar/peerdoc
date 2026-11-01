@@ -17,7 +17,7 @@ import { ConvertTool } from './components/ConvertTool';
 import { PrivacyModal } from './components/PrivacyModal';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useCRDTSync, DocumentSeed } from './hooks/useCRDTSync';
-import { detectFormat, isWordFormat, DocFormat, FORMAT_LABEL } from './lib/formats';
+import { detectFormat, isWordFormat, DocFormat, FORMAT_LABEL, SUPPORTED_EXTENSIONS } from './lib/formats';
 import { loadWordPackage } from './lib/word/package';
 import { buildWordSeed } from './lib/word/seed';
 import { createDocxFiles } from './lib/word/templates';
@@ -342,7 +342,7 @@ export default function App() {
   const openDocument = async (bytes: Uint8Array, name: string, targetTool: ActiveTool = 'edit') => {
     const format = detectFormat(bytes);
     if (!format) {
-      alert(`"${name}" is not a PDF or Word document.`);
+      alert(`"${name}" can't be opened. Supported formats: ${SUPPORTED_EXTENSIONS.join(', ')}.`);
       return;
     }
     const docId = (await computeSHA256(bytes.slice())).toLowerCase();
@@ -490,7 +490,7 @@ export default function App() {
       setActiveTool(nextTool);
       return;
     }
-    guardActiveDocument(parsed ? `Room ${parsed.documentId.slice(0, 8)}...` : 'new document', async () => {
+    guardActiveDocument(parsed ? `document ${parsed.documentId.slice(0, 8)}…` : 'a new document', async () => {
       await joinRoomByIdInternal(input, preferredTool);
     });
   };
@@ -645,14 +645,13 @@ export default function App() {
         >
           <div className="bg-white rounded-3xl shadow-xl max-w-md w-full p-6 md:p-7 space-y-5 ring-1 ring-ink/10">
             <div className="space-y-2">
-              <span className="chip bg-marigold text-ink font-medium">Active Workspace Session</span>
+              <span className="chip bg-marigold text-ink font-medium">Document open</span>
               <h2 id="save-prev-doc-title" className="font-serif text-subheading text-ink">
-                Save previous document first?
+                Save and close the current document?
               </h2>
               <p className="text-body-sm text-graphite leading-relaxed">
-                <strong className="font-semibold text-ink">{fileName}</strong> is currently open in your workspace.
-                Please save your previous document before opening{' '}
-                <strong className="font-semibold text-ink">{pendingDocRequest.label}</strong>.
+                <strong className="font-semibold text-ink">{fileName}</strong> is still open. Save and close it to open{' '}
+                <strong className="font-semibold text-ink">{pendingDocRequest.label}</strong>. It stays in Recent documents with your edits.
               </p>
             </div>
 
@@ -674,7 +673,7 @@ export default function App() {
                 }}
                 className="btn btn-secondary h-10 px-4 text-caption"
               >
-                Go to Editor
+                Keep editing
               </button>
               <button
                 type="button"
@@ -692,7 +691,7 @@ export default function App() {
                 }}
                 className="btn btn-primary h-10 px-5 text-caption"
               >
-                {isSavingPrevious ? 'Saving...' : 'Save & Open New'}
+                {isSavingPrevious ? 'Saving…' : 'Save & open'}
               </button>
             </div>
           </div>

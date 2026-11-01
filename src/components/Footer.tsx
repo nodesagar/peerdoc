@@ -10,11 +10,11 @@ export const Footer: React.FC<FooterProps> = ({ onOpenPrivacyModal }) => {
       <div className="max-w-[1440px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-body-sm text-graphite">
         <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
           <div className="w-6 h-6 rounded-[7px] bg-ink text-white flex items-center justify-center font-semibold text-[10px]">
-            ED
+            PD
           </div>
-          <span className="font-semibold text-ink">EditorDoc P2P</span>
+          <span className="font-semibold text-ink">Peer Docs</span>
           <span aria-hidden>&bull;</span>
-          <span>Offline-first, CRDT-powered collaborative document editor</span>
+          <span>Offline-first, peer-to-peer document editing</span>
         </div>
 
         <div className="flex items-center gap-4">
@@ -22,10 +22,10 @@ export const Footer: React.FC<FooterProps> = ({ onOpenPrivacyModal }) => {
             onClick={onOpenPrivacyModal}
             className="hover:text-ink underline-offset-4 hover:underline transition-colors"
           >
-            P2P Guarantee & Terms
+            Privacy & security
           </button>
           <span aria-hidden>&bull;</span>
-          <span>SDG 9.c: Universal Computing Access</span>
+          <span>Supports UN SDG 9.c: universal access to ICT</span>
         </div>
       </div>
     </footer>

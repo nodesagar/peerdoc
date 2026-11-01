@@ -71,7 +71,7 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
         details: `Watermark: "${text}"`,
       });
     } catch (err) {
-      alert('Error applying watermark: ' + err);
+      alert('Could not add the watermark: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -83,13 +83,13 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
         <div className="w-12 h-12 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center mx-auto">
           <Stamp className="w-6 h-6" />
         </div>
-        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Watermark PDF</h1>
+        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Add a watermark</h1>
         <p className="text-xs text-[#5f6368]">
-          Stamp custom diagonal text watermarks across every page of your document.
+          Stamp your own text across every page of a PDF, at the opacity and angle you choose.
         </p>
         <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
           <Upload className="w-4 h-4" />
-          <span>Select PDF</span>
+          <span>Choose PDF</span>
           <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
         </label>
       </div>
@@ -99,11 +99,11 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
       <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-4">
-        <h2 className="text-base font-bold text-[#1a1c1c]">Watermark Settings</h2>
+        <h2 className="text-base font-bold text-[#1a1c1c]">Watermark settings</h2>
 
         <div className="space-y-3 text-xs">
           <div>
-            <label className="block text-black/60 font-semibold mb-1">Watermark Text</label>
+            <label className="block text-black/60 font-semibold mb-1">Watermark text</label>
             <input
               type="text"
               value={text}
@@ -145,7 +145,7 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
             onClick={() => setFileBuffer(null)}
             className="text-xs text-[#5f6368] hover:text-black"
           >
-            Cancel
+            Choose another file
           </button>
           <button
             onClick={handleApplyWatermark}
@@ -153,7 +153,7 @@ export const WatermarkTool: React.FC<WatermarkToolProps> = ({ onDocumentProcesse
             className="bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold px-6 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50 flex items-center space-x-2"
           >
             <Download className="w-4 h-4" />
-            <span>{isProcessing ? 'Watermarking...' : 'Apply & Download'}</span>
+            <span>{isProcessing ? 'Adding watermark…' : 'Add watermark & download'}</span>
           </button>
         </div>
       </div>

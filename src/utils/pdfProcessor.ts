@@ -130,7 +130,7 @@ export async function compressPDF(
   // Strip non-essential metadata
   pdfDoc.setTitle('');
   pdfDoc.setAuthor('');
-  pdfDoc.setProducer('EditorDoc P2P Optimizer');
+  pdfDoc.setProducer('Peer Docs');
   pdfDoc.setKeywords([]);
 
   const imagesRecompressed = await recompressImages(pdfDoc, level, codec);
@@ -255,7 +255,7 @@ export async function applyTrueRedactions(
   pdfDoc.setAuthor('');
   pdfDoc.setSubject('');
   pdfDoc.setCreator('');
-  pdfDoc.setProducer('EditorDoc P2P Sanitizer');
+  pdfDoc.setProducer('Peer Docs');
   pdfDoc.setKeywords([]);
   return rasterized;
 }
@@ -465,7 +465,7 @@ export async function buildConvergedPDF(
         Subtype: 'Text',
         Rect: [x, y - 20, x + 20, y],
         Contents: PDFHexString.fromText(thread.map((c) => `${c.createdBy ?? 'Someone'}: ${c.text}`).join('\n\n')),
-        T: PDFHexString.fromText(thread[0].createdBy ?? 'EditorDoc'),
+        T: PDFHexString.fromText(thread[0].createdBy ?? 'Peer Docs'),
         Name: 'Comment',
         C: [color.red, color.green, color.blue],
         F: 4, // print

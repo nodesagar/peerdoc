@@ -207,7 +207,7 @@ export const SignTool: React.FC<SignToolProps> = ({
         onDocumentProcessed(docRecord);
       }
     } catch (err) {
-      alert('Error saving signed PDF: ' + err);
+      alert('Could not save the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -221,7 +221,7 @@ export const SignTool: React.FC<SignToolProps> = ({
       const outputName = fileName.replace(/\.pdf$/i, '') + '-signed.pdf';
       downloadUint8ArrayAsFile(signedBytes, outputName);
     } catch (err) {
-      alert('Error signing PDF: ' + err);
+      alert('Could not build the signed PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -248,13 +248,13 @@ export const SignTool: React.FC<SignToolProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-sky text-ink flex items-center justify-center mx-auto">
             <PenTool className="w-6 h-6" />
           </div>
-          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <h2 className="font-serif text-subheading text-ink">No document open</h2>
           <p className="text-body-sm text-graphite max-w-sm mx-auto">
-            Upload a PDF or return to the Dashboard to load the demo confidential agreement.
+            Open a PDF to sign it, or try the sample PDF from the dashboard.
           </p>
           <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
-            <span>Select PDF</span>
+            <span>Open PDF</span>
             <input type="file" accept="application/pdf" onChange={(e) => {
               const file = e.target.files?.[0];
               if (file && onUploadFile) onUploadFile(file);
@@ -315,8 +315,8 @@ export const SignTool: React.FC<SignToolProps> = ({
               <button
                 onClick={clearSigCanvas}
                 className="btn btn-ghost h-8 w-8 px-0"
-                title="Clear Signature"
-                aria-label="Clear Signature"
+                title="Clear drawing"
+                aria-label="Clear drawing"
               >
                 <Eraser className="w-3.5 h-3.5" />
               </button>
@@ -333,6 +333,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                   handleGenerateTypedSig(e.target.value);
                 }}
                 aria-label="Name to sign"
+                placeholder="Type your name"
                 className="field h-[34px] w-40 rounded-full bg-cloud border-transparent text-caption px-3.5"
               />
             </div>
@@ -341,7 +342,7 @@ export const SignTool: React.FC<SignToolProps> = ({
           {activeTab === 'upload' && (
             <div className="flex items-center gap-2 border-l border-ash pl-3">
               <label className="btn btn-soft h-[34px] px-3.5 text-caption cursor-pointer">
-                Choose PNG
+                Choose image
                 <input type="file" accept="image/png,image/jpeg" onChange={handleUploadSig} className="hidden" />
               </label>
             </div>
@@ -349,11 +350,11 @@ export const SignTool: React.FC<SignToolProps> = ({
 
           {activeSignatureDataUrl ? (
             <span className="chip bg-mint">
-              Click anywhere on PDF to stamp
+              Click the page to place your signature
             </span>
           ) : (
             <span className="text-caption text-graphite">
-              Create signature to stamp on document
+              Draw, type or upload a signature first
             </span>
           )}
         </div>
@@ -373,20 +374,20 @@ export const SignTool: React.FC<SignToolProps> = ({
             onClick={handleSaveSigned}
             disabled={processing}
             className="btn btn-secondary h-[34px] px-4 text-caption"
-            title="Save signed document to cache and end active session"
+            title="Close this document and return to the dashboard. It stays in Recent documents with your edits."
           >
             <Check className="w-3.5 h-3.5" />
-            <span>{processing ? 'Saving...' : 'Save'}</span>
+            <span>{processing ? 'Saving…' : 'Save & close'}</span>
           </button>
 
           <button
             onClick={handleDownloadSigned}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
-            title="Download signed PDF to your device (keeps document open in workspace)"
+            title="Download the PDF with your signatures. The document stays open."
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{processing ? 'Signing...' : 'Download'}</span>
+            <span>{processing ? 'Preparing…' : 'Download signed PDF'}</span>
           </button>
         </div>
       </div>
@@ -457,6 +458,7 @@ export const SignTool: React.FC<SignToolProps> = ({
                         e.stopPropagation();
                         crdt.removeSignature(s.id);
                       }}
+                      aria-label="Remove signature"
                       className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />

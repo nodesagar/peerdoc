@@ -25,7 +25,7 @@ export default class SafeSimplePeer extends Base {
   constructor(opts?: PeerOptions) {
     super(opts);
     this.on('error', (err) => {
-      console.debug('[EditorDoc] WebRTC peer closed:', err.code ?? err.message);
+      console.debug('[Peer Docs] WebRTC peer closed:', err.code ?? err.message);
     });
   }
 }

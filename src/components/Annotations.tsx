@@ -221,7 +221,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
           {resolvedCount > 0 && (
             <label className="flex items-center gap-1.5 text-caption text-graphite cursor-pointer">
               <input type="checkbox" className="accent-ink" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
-              Resolved ({resolvedCount})
+              Show resolved ({resolvedCount})
             </label>
           )}
           <button onClick={onClose} aria-label="Close comments" className="btn btn-ghost h-8 w-8 px-0">
@@ -233,7 +233,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {ordered.length === 0 && (
           <p className="text-body-sm text-graphite text-center py-10 px-4">
-            No comments yet. Use Highlight, Box, Draw or Note in the toolbar, then click it to start a thread.
+            No comments yet. Add a Highlight, Box, Drawing or Note from the toolbar; each one gets a thread here.
           </p>
         )}
         {ordered.map((a) => (
@@ -321,7 +321,7 @@ const Thread: React.FC<{
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             className="btn btn-ghost h-7 w-7 px-0 hover:text-papaya"
             title="Delete markup and its comments"
-            aria-label="Delete annotation"
+            aria-label="Delete markup"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

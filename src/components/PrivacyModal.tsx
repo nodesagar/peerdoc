@@ -10,20 +10,20 @@ const sections = [
   {
     Icon: Lock,
     paper: 'bg-periwinkle',
-    title: 'Zero Central Servers: Pure Peer-to-Peer',
-    text: "There is no EditorDoc server. Collaboration happens directly between peer browsers via WebRTC DataChannels (Trystero) and local BroadcastChannels. So that peers can still connect when a network blocks WebRTC, edits are also relayed through public MQTT brokers (the PDF itself only when no direct connection is available); everything sent that way is end-to-end encrypted (AES-256-GCM) with a key derived from the room's secret key, which the brokers never see. Each room has a random key that lives only in the share link (after the #) and on your device, so having the same PDF is not enough to join. Anyone with the full share link can view and edit.",
+    title: 'No Peer Docs server, invite-only rooms',
+    text: "Your documents never pass through a server we run. Collaborators connect browser to browser over WebRTC; public WebTorrent trackers only help them find each other. When a network blocks direct connections, changes (and the file itself, if no direct connection is available) travel through public MQTT relays instead, end-to-end encrypted with AES-256-GCM, so the relays see only ciphertext. Rooms are invite-only: the owner creates a single-use invite link for each person and can remove anyone at any time. Having the same file is not enough to join.",
   },
   {
     Icon: WifiOff,
     paper: 'bg-marigold',
-    title: 'Offline-First Persistence (Y-IndexedDB)',
-    text: "You can work offline for weeks without an active internet connection. All edits, annotations, page rotations, and redactions are stored locally in your browser's IndexedDB using Conflict-Free Replicated Data Types (CRDTs). When you reconnect, updates converge seamlessly in any order.",
+    title: 'Works offline',
+    text: "Everything you do (text edits, markup, comments, page changes, redactions and signatures) is saved in this browser's storage (IndexedDB) as you work, so you can keep editing without a connection. When you reconnect, everyone's changes merge automatically, in whatever order they arrive, thanks to CRDTs.",
   },
   {
     Icon: Cpu,
     paper: 'bg-mint',
-    title: 'Permanent True Redactions',
-    text: 'Unlike basic tools that merely draw black boxes over text, EditorDoc P2P rasterizes redacted regions directly into pixel bitmaps, permanently destroying the underlying text streams and font glyphs to ensure absolute security.',
+    title: 'Redactions remove the content',
+    text: "When you download a redacted PDF, every page with a redaction is rebuilt as an image with the black boxes burned in, so the text, fonts and graphics underneath are gone, not just covered. Text elsewhere on those pages stops being selectable too. Every downloaded PDF also leaves out the original title, author and other document properties.",
   },
 ];
 
@@ -50,9 +50,9 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
           </div>
           <div className="space-y-1">
             <h2 className="font-serif text-subheading md:text-heading-sm text-ink text-balance">
-              P2P Privacy Guarantee & Terms
+              Privacy & security
             </h2>
-            <p className="eyebrow">EditorDoc P2P Decentralized Collaboration Guarantee</p>
+            <p className="eyebrow">How Peer Docs handles your documents</p>
           </div>
         </div>
 
@@ -72,7 +72,7 @@ export const PrivacyModal: React.FC<PrivacyModalProps> = ({ isOpen, onClose }) =
 
         <div className="flex justify-end">
           <button onClick={onClose} className="btn btn-primary">
-            I Understand & Accept
+            Got it
           </button>
         </div>
       </div>

@@ -109,7 +109,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
               </span>
               <Users className="w-3.5 h-3.5" />
-              <span>{peerCount} {peerCount === 1 ? 'Peer Online' : 'Peers Online'}</span>
+              <span>{peerCount} {peerCount === 1 ? 'collaborator' : 'collaborators'} online</span>
             </span>
           ) : (
             <span className="chip bg-marigold py-1 px-3">
@@ -118,7 +118,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
               </span>
               <WifiOff className="w-3.5 h-3.5" />
-              <span>Searching for Peers...</span>
+              <span>Looking for collaborators…</span>
             </span>
           )}
         </div>
@@ -137,26 +137,26 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
 
           <h2 className="font-serif text-subheading md:text-heading-sm text-ink text-balance">
             {isTransferring
-              ? `Transferring Document (${pdfProgress}%)`
+              ? `Receiving the document (${pdfProgress}%)`
               : accepted
-              ? 'Request Accepted, Starting Transfer'
+              ? 'Request accepted, starting transfer'
               : peerCount > 0
-              ? 'Synchronizing with Peer'
-              : 'Connecting to Document Room'}
+              ? 'Connected, waiting for the file'
+              : 'Waiting for someone with the file'}
           </h2>
 
           <p className="text-body-sm md:text-body text-graphite max-w-md mx-auto">
             {isTransferring
-              ? 'Receiving file chunks directly from your peer over WebRTC. The document will open automatically once verified.'
+              ? 'Receiving the file from a collaborator. The document opens automatically once the file is verified.'
               : accepted
-              ? 'A peer that has the file accepted the request. Chunks should start arriving shortly.'
+              ? 'A collaborator who has the file accepted the request. It should start arriving shortly.'
               : onlyRefusals
-              ? 'The peers connected so far do not have the file. Make sure the person who shared the link still has it open.'
+              ? 'The collaborators connected so far do not have the file. Make sure the person who invited you still has it open.'
               : peerCount > 0
               ? asked
-                ? 'Connected to document peers. Waiting for one that has the file to accept the request...'
-                : 'Connected to document peers. Requesting the original file...'
-              : 'Waiting for the document host to connect. Ensure the person who shared this link has EditorDoc open in their browser.'}
+                ? 'Connected to collaborators. Waiting for one who has the file to accept the request…'
+                : 'Connected to collaborators. Requesting the file…'
+              : 'The document opens once someone who has the file is online. Ask the person who invited you to open it in Peer Docs.'}
           </p>
         </div>
 
@@ -165,14 +165,14 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
           <div className="bg-marigold/45 rounded-2xl p-4 md:p-5 text-left text-body-sm text-ink space-y-2">
             <div className="font-semibold flex items-center gap-2">
               <Info className="w-4 h-4 shrink-0" />
-              <span>Why is peer discovery waiting?</span>
+              <span>Nobody connected yet?</span>
             </div>
             <ul className="list-disc list-inside space-y-1 text-graphite text-caption">
-              <li><strong className="text-ink">Host must be active:</strong> The host who uploaded this document must have EditorDoc open in their browser.</li>
+              <li><strong className="text-ink">Someone with the file must be online:</strong> the owner, or anyone who already has the document, needs it open in Peer Docs.</li>
               {isLocalhost && (
-                <li><strong className="text-ink">Testing between 2 devices?</strong> <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">localhost</code> only works on this computer. Use your Wi-Fi IP address (e.g. <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">http://192.168.x.x:3000/?doc=...</code>) or test with another browser window on this machine.</li>
+                <li><strong className="text-ink">Testing between 2 devices?</strong> <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">localhost</code> only works on this computer. Open Peer Docs on both devices through your computer’s network address (e.g. <code className="bg-white/70 px-1 py-0.5 rounded-md text-ink font-mono">http://192.168.x.x:3000</code>) and create the invite there, or test with a second browser window on this computer.</li>
               )}
-              <li><strong className="text-ink">Ad-blockers / Firewall:</strong> Brave Shields or ad-blockers can block WebTorrent/WebRTC trackers. Try pausing them or test on the same network.</li>
+              <li><strong className="text-ink">Ad blockers or firewalls:</strong> Brave Shields and ad blockers can block the WebTorrent trackers collaborators use to find each other. Try pausing them for this site.</li>
             </ul>
           </div>
         )}
@@ -187,7 +187,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               />
             </div>
             <div className="flex justify-between text-caption text-graphite tabular-nums">
-              <span>Receiving P2P Chunks</span>
+              <span>Receiving</span>
               <span className="font-semibold text-ink">{pdfProgress}%</span>
             </div>
           </div>
@@ -234,7 +234,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
             className="btn btn-primary"
           >
             <RefreshCw className={`w-4 h-4 ${isRequesting ? 'animate-spin' : ''}`} />
-            <span>{isRequesting ? 'Requesting...' : 'Request file from peers'}</span>
+            <span>{isRequesting ? 'Requesting…' : 'Ask collaborators for the file'}</span>
           </button>
 
           {onUploadFile && (
@@ -242,10 +242,10 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="btn btn-secondary"
-                title="If you already have this file locally, upload it to match the room ID immediately"
+                title="Already have this exact file? Open it to start right away. A different version will not match this document."
               >
                 <Upload className="w-4 h-4" />
-                <span>Open matching local file</span>
+                <span>Open my copy</span>
               </button>
               <input
                 type="file"
@@ -262,10 +262,10 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               <button
                 onClick={() => syncFileInputRef.current?.click()}
                 className="btn btn-secondary"
-                title="Import .cdsync file if direct WebRTC cannot connect"
+                title="Apply the changes in a .cdsync file someone sent you"
               >
                 <FolderSync className="w-4 h-4" />
-                <span>Import .cdsync File</span>
+                <span>Import sync file</span>
               </button>
               <input
                 type="file"
@@ -283,7 +283,7 @@ export const SyncWaitingCard: React.FC<SyncWaitingCardProps> = ({
               className="btn btn-ghost"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Dashboard</span>
+              <span>Back to dashboard</span>
             </button>
           )}
         </div>

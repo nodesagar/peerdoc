@@ -176,11 +176,11 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         }
       }
     } catch (err) {
-      alert('Text search failed: ' + err);
+      alert('Could not search the text: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsSearching(false);
     }
-    if (!found) alert(`No matches for "${searchText.trim()}" (scanned/image-only text cannot be searched).`);
+    if (!found) alert(`No matches for "${searchText.trim()}". Scanned or image-only text can't be searched; draw boxes over it instead.`);
   };
 
   const handleSaveRedacted = async () => {
@@ -207,7 +207,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
         onDocumentProcessed(docRecord);
       }
     } catch (err) {
-      alert('Error saving redacted PDF: ' + err);
+      alert('Could not save the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -221,7 +221,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
       const outputName = fileName.replace(/\.pdf$/i, '') + '-redacted.pdf';
       downloadUint8ArrayAsFile(redactedBytes, outputName);
     } catch (err) {
-      alert('Error applying redaction: ' + err);
+      alert('Could not build the redacted PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -248,13 +248,13 @@ export const RedactTool: React.FC<RedactToolProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-marigold text-ink flex items-center justify-center mx-auto">
             <ShieldAlert className="w-6 h-6" />
           </div>
-          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <h2 className="font-serif text-subheading text-ink">No document open</h2>
           <p className="text-body-sm text-graphite max-w-sm mx-auto">
-            Upload a PDF or return to the Dashboard to load the demo confidential agreement.
+            Open a PDF to redact it, or try the sample PDF from the dashboard.
           </p>
           <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
-            <span>Select PDF</span>
+            <span>Open PDF</span>
             <input type="file" accept="application/pdf" onChange={(e) => {
               const file = e.target.files?.[0];
               if (file && onUploadFile) onUploadFile(file);
@@ -277,7 +277,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
               className="segment"
             >
               <Square className="w-3.5 h-3.5" />
-              <span>Draw Box</span>
+              <span>Draw boxes</span>
             </button>
             <button
               onClick={() => setActiveTab('wipe')}
@@ -285,7 +285,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
               className="segment"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Search Wipe</span>
+              <span>Find & redact</span>
             </button>
             <button
               onClick={() => setActiveTab('metadata')}
@@ -301,7 +301,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
             <div className="flex items-center gap-2 pl-3 border-l border-ash">
               <input
                 type="text"
-                placeholder="Text to redact..."
+                placeholder="Text to find…"
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 aria-label="Text to redact"
@@ -312,14 +312,14 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                 disabled={isSearching}
                 className="btn btn-primary h-[34px] px-3.5 text-caption"
               >
-                {isSearching ? 'Wiping...' : 'Redact Matches'}
+                {isSearching ? 'Searching…' : 'Redact all matches'}
               </button>
             </div>
           )}
 
           <div className="chip bg-cloud tabular-nums ml-1">
             <span className="w-2.5 h-2.5 rounded-[3px] bg-ink" aria-hidden />
-            {crdt.redactions.length} {crdt.redactions.length === 1 ? 'Redaction' : 'Redactions'}
+            {crdt.redactions.length} {crdt.redactions.length === 1 ? 'redaction' : 'redactions'}
           </div>
         </div>
 
@@ -338,20 +338,20 @@ export const RedactTool: React.FC<RedactToolProps> = ({
             onClick={handleSaveRedacted}
             disabled={processing}
             className="btn btn-secondary h-[34px] px-4 text-caption"
-            title="Save redacted document to cache and end active session"
+            title="Close this document and return to the dashboard. It stays in Recent documents with your edits."
           >
             <Check className="w-3.5 h-3.5" />
-            <span>{processing ? 'Saving...' : 'Save'}</span>
+            <span>{processing ? 'Saving…' : 'Save & close'}</span>
           </button>
 
           <button
             onClick={handleDownloadRedacted}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
-            title="Burn redactions and download PDF to your device (keeps document open in workspace)"
+            title="Download the PDF with redactions applied. The document stays open."
           >
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{processing ? 'Sanitizing Pixels...' : 'Download'}</span>
+            <span>{processing ? 'Applying redactions…' : 'Download redacted PDF'}</span>
           </button>
         </div>
       </div>
@@ -364,10 +364,10 @@ export const RedactTool: React.FC<RedactToolProps> = ({
               <span className="w-8 h-8 rounded-xl bg-marigold flex items-center justify-center shrink-0">
                 <FileCode className="w-4 h-4" />
               </span>
-              <span>Document Metadata to be Stripped</span>
+              <span>Metadata left out of the download</span>
             </h3>
             <p className="text-body-sm text-graphite">
-              During export, EditorDoc P2P permanently removes all metadata tags, author info, and creator history.
+              The downloaded PDF does not carry over any of the properties below. Its creation and modified dates are set to the time of download.
             </p>
             {metadata ? (
               <div className="grid grid-cols-2 gap-4 text-caption font-mono text-ink bg-linen p-4 rounded-2xl">
@@ -384,14 +384,14 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                   <span className="text-graphite">Producer:</span> {metadata.producer || 'None'}
                 </div>
                 <div>
-                  <span className="text-graphite">Creation Date:</span> {metadata.creationDate || 'None'}
+                  <span className="text-graphite">Created:</span> {metadata.creationDate || 'None'}
                 </div>
                 <div>
-                  <span className="text-graphite">Modified Date:</span> {metadata.modificationDate || 'None'}
+                  <span className="text-graphite">Modified:</span> {metadata.modificationDate || 'None'}
                 </div>
               </div>
             ) : (
-              <div className="text-caption text-graphite">Reading metadata...</div>
+              <div className="text-caption text-graphite">Reading metadata…</div>
             )}
           </div>
         </div>
@@ -458,6 +458,7 @@ export const RedactTool: React.FC<RedactToolProps> = ({
                           e.stopPropagation();
                           crdt.removeRedaction(r.id);
                         }}
+                        aria-label="Remove redaction"
                         className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                       >
                         <Trash2 className="w-3 h-3" />

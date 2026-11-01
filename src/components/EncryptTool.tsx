@@ -58,10 +58,10 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
         blob: new Blob([encryptedBytes as any], { type: 'application/pdf' }),
         format: 'pdf',
         tool: 'encrypt',
-        details: 'Password protected PDF',
+        details: 'Password-protected',
       });
     } catch (err) {
-      alert('Error encrypting PDF: ' + err);
+      alert('Could not password-protect the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -73,13 +73,13 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
         <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center mx-auto">
           <Lock className="w-6 h-6" />
         </div>
-        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Protect & Encrypt PDF</h1>
+        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Password-protect a PDF</h1>
         <p className="text-xs text-[#5f6368]">
-          Add password protection to prevent unauthorized opening or viewing.
+          The downloaded PDF can only be opened with the password you set. Keep it safe: it can’t be recovered.
         </p>
         <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
           <Upload className="w-4 h-4" />
-          <span>Select PDF</span>
+          <span>Choose PDF</span>
           <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
         </label>
       </div>
@@ -89,12 +89,12 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
   return (
     <div className="max-w-xl mx-auto px-4 py-8 space-y-6">
       <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-4">
-        <h2 className="text-base font-bold text-[#1a1c1c]">Set Document Password</h2>
+        <h2 className="text-base font-bold text-[#1a1c1c]">Password</h2>
 
         <div className="relative">
           <input
             type={showPassword ? 'text' : 'password'}
-            placeholder="Enter a strong password..."
+            placeholder="Choose a strong password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full bg-[#f4f3f2] p-3 rounded-xl border border-black/10 outline-none text-sm pr-10"
@@ -102,6 +102,7 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
             className="absolute right-3 top-3 text-black/50 hover:text-black"
           >
             {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -113,7 +114,7 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
             onClick={() => setFileBuffer(null)}
             className="text-xs text-[#5f6368] hover:text-black"
           >
-            Cancel
+            Choose another file
           </button>
           <button
             onClick={handleEncrypt}
@@ -121,7 +122,7 @@ export const EncryptTool: React.FC<EncryptToolProps> = ({ onDocumentProcessed })
             className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-6 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-40 flex items-center space-x-2"
           >
             <Lock className="w-4 h-4" />
-            <span>{isProcessing ? 'Encrypting...' : 'Encrypt & Download'}</span>
+            <span>{isProcessing ? 'Encrypting…' : 'Protect & download'}</span>
           </button>
         </div>
       </div>
