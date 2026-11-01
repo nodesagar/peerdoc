@@ -16,16 +16,11 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
   const [isSplitting, setIsSplitting] = useState(false);
   const sessionDocIdRef = React.useRef<string>(crypto.randomUUID());
 
-  const pdfBlobUrl = React.useMemo(() => {
-    if (!fileBuffer) return null;
-    return URL.createObjectURL(new Blob([fileBuffer as any], { type: 'application/pdf' }));
-  }, [fileBuffer]);
-
-  React.useEffect(() => {
-    return () => {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    };
-  }, [pdfBlobUrl]);
+  // A Blob, not a blob: URL: react-pdf reads it fresh on every load, so a remount never hits a revoked URL.
+  const pdfBlob = React.useMemo(
+    () => (fileBuffer ? new Blob([fileBuffer as any], { type: 'application/pdf' }) : null),
+    [fileBuffer]
+  );
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -81,7 +76,7 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
         details: `Extracted ${selectedPages.length} ${selectedPages.length === 1 ? 'page' : 'pages'}`,
       });
     } catch (err) {
-      alert('Error splitting PDF: ' + err);
+      alert('Could not extract the pages: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsSplitting(false);
     }
@@ -93,13 +88,13 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
         <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mx-auto">
           <Scissors className="w-6 h-6" />
         </div>
-        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Split PDF Pages</h1>
+        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Split a PDF</h1>
         <p className="text-xs text-[#5f6368]">
-          Select specific pages to extract into a clean, standalone PDF.
+          Pick the pages you want and download them as a new PDF.
         </p>
         <label className="inline-flex items-center space-x-2 bg-[#005db2] text-white px-5 py-2.5 rounded-xl cursor-pointer hover:bg-[#004a8f] transition-colors text-sm font-medium">
           <Upload className="w-4 h-4" />
-          <span>Select PDF</span>
+          <span>Choose PDF</span>
           <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
         </label>
       </div>
@@ -111,7 +106,7 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
       <div className="bg-white rounded-2xl border border-black/10 p-4 shadow-2xs flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-[#1a1c1c]">{fileName}</h2>
-          <span className="text-xs text-[#5f6368]">{selectedPages.length} pages selected for extraction</span>
+          <span className="text-xs text-[#5f6368]">{selectedPages.length} {selectedPages.length === 1 ? 'page' : 'pages'} selected</span>
         </div>
         <button
           onClick={handleExtract}
@@ -119,13 +114,13 @@ export const SplitTool: React.FC<SplitToolProps> = ({ onDocumentProcessed }) => 
           className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold px-5 py-2 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-40 flex items-center space-x-2"
         >
           <Scissors className="w-3.5 h-3.5" />
-          <span>{isSplitting ? 'Extracting...' : 'Extract Selected'}</span>
+          <span>{isSplitting ? 'Extracting…' : 'Download selected pages'}</span>
         </button>
       </div>
 
       <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs">
         <Document
-          file={pdfBlobUrl}
+          file={pdfBlob}
           onLoadSuccess={({ numPages: count }) => setNumPages(count)}
           className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4"
         >

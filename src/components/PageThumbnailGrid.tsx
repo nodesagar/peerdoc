@@ -77,7 +77,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
             />
           ) : (
             <div style={{ width: 160, height: 226 }} className="bg-linen flex items-center justify-center">
-              <span className="text-graphite text-caption">Loading...</span>
+              <span className="text-graphite text-caption">Loading…</span>
             </div>
           )}
         </div>
@@ -129,7 +129,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 onRotate(originalIndex, 'ccw');
               }}
               className="w-8 h-8 flex items-center justify-center bg-ink/60 hover:bg-ink/85 text-white rounded-full pointer-events-auto backdrop-blur-sm transition-colors"
-              title="Rotate Left"
+              title="Rotate left"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -139,7 +139,7 @@ const SortableThumbnail: React.FC<SortableThumbnailProps> = ({
                 onRotate(originalIndex, 'cw');
               }}
               className="w-8 h-8 flex items-center justify-center bg-ink/60 hover:bg-ink/85 text-white rounded-full pointer-events-auto backdrop-blur-sm transition-colors"
-              title="Rotate Right"
+              title="Rotate right"
             >
               <RotateCw className="w-4 h-4" />
             </button>

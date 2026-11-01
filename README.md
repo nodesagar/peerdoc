@@ -1,4 +1,4 @@
-# PeerDoc (EditorDoc P2P)
+# Peer Docs
 
 [![React](https://img.shields.io/badge/React-19-blue?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -7,7 +7,7 @@
 [![CRDT](https://img.shields.io/badge/CRDT-Yjs-orange)](https://github.com/yjs/yjs)
 [![License](https://img.shields.io/badge/SDG-9.c%20Equitable%20Access-success)](#)
 
-> **Offline-first, peer-to-peer collaborative PDF & document editor.**  
+> **Offline-first, peer-to-peer collaborative document editor.**  
 > Users can work offline for weeks, sync directly in any order without central servers, and always converge to the exact same document.  
 > *Built for SDG 9.c: Universal & equitable computing access.*
 
@@ -15,7 +15,7 @@
 
 ## 1. Architecture Overview
 
-EditorDoc P2P decouples edit operations from raw file storage using Conflict-Free Replicated Data Types (CRDTs):
+Peer Docs decouples edit operations from raw file storage using Conflict-Free Replicated Data Types (CRDTs):
 - **Document Identification**: `documentId = SHA-256(original_pdf_bytes)` names the file and verifies transferred chunks.
 - **Invite-only Rooms (`access.ts`, `roomKey.ts`)**: Whoever opens a PDF owns its room. Each browser has its own P-256 key pairs (private keys non-extractable, kept in IndexedDB). The owner signs a roster that lists the members and seals the random 128-bit room key separately to each member (ECDH, then HKDF, then AES-GCM). Every transport derives its channel from that key, so having the PDF is not enough to join. **Inviting** creates a one-time link (`?doc=<id>#i=<token>&o=<owner>`); its holder knocks on a control channel with a request sealed to the token, and the owner's browser admits them automatically. **Removing** someone rotates the room key and seals the new one to everyone else, so the removed browser can no longer find or read the room. Members pass the newest owner-signed roster to each other, so anyone online brings a returning member up to date. There is no server: the public trackers and relay only ever carry signed or encrypted data. Limits: the owner's browser must be online for an invitee's first join; a removed person keeps what they already had; a member who was offline during a removal can still send their own offline edits to the removed person before they hear about it; if the owner's browser storage is lost, the member list can no longer change.
 - **CRDT Document (`Y.Doc`)**: Manages non-conflicting operational state across nested `Y.Map` structures (`meta`, `pages`, `textOverlays`, `whiteouts`, `redactions`, `signatures`).
@@ -35,7 +35,7 @@ EditorDoc P2P decouples edit operations from raw file storage using Conflict-Fre
 
 ```
 +-----------------------------------------------------------------------------------------+
-|                                    EditorDoc P2P                                        |
+|                                    Peer Docs                                            |
 +-----------------------------------------------------------------------------------------+
 |                                                                                         |
 |   +-----------------------+     +-----------------------+     +---------------------+   |
@@ -117,7 +117,7 @@ npm install
 | `npm run preview` | Previews the production build locally |
 
 ### Running Tests
-PeerDoc includes a comprehensive Vitest test suite covering fractional indexing, multi-peer offline convergence, state-vector handshakes, `.cdsync` idempotency, and binary chunk verification.
+Peer Docs includes a comprehensive Vitest test suite covering fractional indexing, multi-peer offline convergence, state-vector handshakes, `.cdsync` idempotency, and binary chunk verification.
 ```bash
 npm test
 ```

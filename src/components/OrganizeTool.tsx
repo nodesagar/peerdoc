@@ -115,7 +115,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
       }
     } catch (err) {
       console.error('Failed to save organized PDF:', err);
-      alert('Error saving organized PDF: ' + err);
+      alert('Could not save the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -130,7 +130,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
       downloadUint8ArrayAsFile(convergedBytes, outputName);
     } catch (err) {
       console.error('Failed to export organized PDF:', err);
-      alert('Error building organized PDF: ' + err);
+      alert('Could not build the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -156,7 +156,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
         blob: new Blob([extractedBytes as any], { type: 'application/pdf' }),
       });
     } catch (err) {
-      alert('Error extracting pages: ' + err);
+      alert('Could not extract the pages: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -183,13 +183,13 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-periwinkle text-ink flex items-center justify-center mx-auto">
             <Layers className="w-6 h-6" />
           </div>
-          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <h2 className="font-serif text-subheading text-ink">No document open</h2>
           <p className="text-body-sm text-graphite max-w-sm mx-auto">
-            Upload a PDF or return to the Dashboard to load the demo confidential agreement.
+            Open a PDF to organize its pages, or try the sample PDF from the dashboard.
           </p>
           <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
-            <span>Select PDF</span>
+            <span>Open PDF</span>
             <input type="file" accept="application/pdf" onChange={(e) => {
               const file = e.target.files?.[0];
               if (file && onUploadFile) onUploadFile(file);
@@ -211,7 +211,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
           >
             <Check className="w-3.5 h-3.5" />
             <span>
-              {selectedPages.length === crdt.pages.length ? 'Deselect All' : 'Select All'}
+              {selectedPages.length === crdt.pages.length ? 'Deselect all' : 'Select all'}
             </span>
           </button>
 
@@ -220,7 +220,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
             className="btn btn-soft h-[34px] px-3.5 text-caption"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Rotate All Left</span>
+            <span>Rotate all left</span>
           </button>
 
           <button
@@ -228,7 +228,7 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
             className="btn btn-soft h-[34px] px-3.5 text-caption"
           >
             <RotateCw className="w-3.5 h-3.5" />
-            <span>Rotate All Right</span>
+            <span>Rotate all right</span>
           </button>
 
           {selectedPages.length > 0 && (
@@ -236,36 +236,38 @@ export const OrganizeTool: React.FC<OrganizeToolProps> = ({
               onClick={handleExtractSelected}
               disabled={isProcessing}
               className="btn h-[34px] px-3.5 text-caption bg-periwinkle text-ink hover:shadow-md-3"
+              title="Download the selected pages as a new PDF"
             >
               <Scissors className="w-3.5 h-3.5" />
-              <span>Extract ({selectedPages.length})</span>
+              <span>Extract {selectedPages.length} {selectedPages.length === 1 ? 'page' : 'pages'}</span>
             </button>
           )}
         </div>
 
         <div className="flex items-center gap-3">
           <div className="text-caption text-graphite">
-            <span className="font-semibold text-ink tabular-nums">{crdt.pages.filter((p) => !p.deleted).length}</span> active pages
+            <span className="font-semibold text-ink tabular-nums">{crdt.pages.filter((p) => !p.deleted).length}</span> of{' '}
+            {crdt.pages.length} pages kept
           </div>
 
           <button
             onClick={handleSaveOrganized}
             disabled={isProcessing}
             className="btn btn-secondary h-[34px] px-4 text-caption"
-            title="Save document to cache and end active session"
+            title="Close this document and return to the dashboard. It stays in Recent documents with your edits."
           >
             <Check className="w-3.5 h-3.5" />
-            <span>{isProcessing ? 'Saving...' : 'Save'}</span>
+            <span>{isProcessing ? 'Saving…' : 'Save & close'}</span>
           </button>
 
           <button
             onClick={handleDownloadOrganized}
             disabled={isProcessing}
             className="btn btn-primary h-[34px] px-4 text-caption"
-            title="Download organized PDF to your device (keeps document open in workspace)"
+            title="Download the PDF with your page changes. The document stays open."
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{isProcessing ? 'Processing...' : 'Download'}</span>
+            <span>{isProcessing ? 'Preparing…' : 'Download PDF'}</span>
           </button>
         </div>
       </div>

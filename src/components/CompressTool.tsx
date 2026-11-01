@@ -118,11 +118,11 @@ export const CompressTool: React.FC<CompressToolProps> = ({
         blob: new Blob([compressedBuffer as any], { type: 'application/pdf' }),
         format: 'pdf',
         tool: 'compress',
-        details: savedPct > 0 ? `Saved ${savedPct}% (${compressionLevel})` : `Compressed (${compressionLevel})`,
+        details: `${savedPct > 0 ? `Saved ${savedPct}%` : 'No size saved'} (${LEVELS.find((l) => l.id === compressionLevel)?.label ?? compressionLevel})`,
       });
     } catch (err) {
       console.error('Compression error:', err);
-      alert('Error compressing PDF: ' + err);
+      alert('Could not compress the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsCompressing(false);
     }
@@ -142,13 +142,13 @@ export const CompressTool: React.FC<CompressToolProps> = ({
         <div className="text-center space-y-4 max-w-2xl mx-auto">
           <div className="inline-flex items-center space-x-2 bg-amber-50 text-amber-800 text-xs font-semibold px-3 py-1.5 rounded-full border border-amber-200">
             <Minimize2 className="w-4 h-4 text-amber-600" />
-            <span>PDF COMPRESSION ENGINE</span>
+            <span>Compress</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-serif-heading font-bold text-[#1a1c1c]">
-            Compress PDF Locally
+            Compress a PDF
           </h1>
           <p className="text-sm md:text-base text-[#414753]">
-            Reduce file sizes securely in your browser. No files are ever sent to external servers.
+            Shrink a PDF right in your browser. The file never leaves your device.
           </p>
         </div>
 
@@ -157,8 +157,8 @@ export const CompressTool: React.FC<CompressToolProps> = ({
             <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
               <Upload className="w-8 h-8" />
             </div>
-            <span className="text-base font-semibold text-[#1a1c1c]">Select PDF to Compress</span>
-            <span className="text-xs text-[#5f6368] mt-1">or drag and drop your file here</span>
+            <span className="text-base font-semibold text-[#1a1c1c]">Choose a PDF to compress</span>
+            <span className="text-xs text-[#5f6368] mt-1">Images are downscaled; text stays sharp</span>
             <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
           </label>
         </div>
@@ -173,13 +173,13 @@ export const CompressTool: React.FC<CompressToolProps> = ({
           <h2 className="text-xl font-bold text-[#1a1c1c]">{currentFileName}</h2>
           <p className="text-xs text-[#5f6368]">Original size: {formatBytes(fileSizeBytes)}</p>
         </div>
-        <button onClick={resetAll} className="p-2 hover:bg-black/5 rounded-xl text-[#5f6368]">
+        <button onClick={resetAll} aria-label="Choose a different file" title="Choose a different file" className="p-2 hover:bg-black/5 rounded-xl text-[#5f6368]">
           <X className="w-5 h-5" />
         </button>
       </div>
 
       <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-6">
-        <h3 className="text-base font-semibold text-[#1a1c1c]">Select Compression Level</h3>
+        <h3 className="text-base font-semibold text-[#1a1c1c]">Compression level</h3>
 
         <div role="radiogroup" aria-label="Compression level" className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {LEVELS.map(({ id, label, detail }) => (
@@ -225,7 +225,7 @@ export const CompressTool: React.FC<CompressToolProps> = ({
             disabled={isCompressing}
             className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-6 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
           >
-            {isCompressing ? 'Compressing...' : 'Compress & Download'}
+            {isCompressing ? 'Compressing…' : 'Compress & download'}
           </button>
         </div>
       </div>

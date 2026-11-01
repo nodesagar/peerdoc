@@ -252,7 +252,7 @@ export function useCRDTSync(options: UseCRDTSyncOptions) {
           },
           onPdfTransferEvent: (event) => {
             if (isCancelled) return;
-            console.info('[EditorDoc PDF]', event.kind, event);
+            console.info('[Peer Docs file]', event.kind, event);
             if (event.kind === 'serving') setServingCount((n) => n + 1);
             else if (event.kind === 'served') setServingCount((n) => Math.max(0, n - 1));
             else setTransferLog((log) => [...log, { ...event, at: Date.now() }].slice(-12));

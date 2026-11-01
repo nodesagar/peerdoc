@@ -116,7 +116,7 @@ interface SignatureBox {
 | **Viewer / Canvas** | `pdfjs.getDocument()`, `pdfjs.Page.render()`, `react-pdf` (`<Document>`, `<Page>`) | Renders page canvas and handles zoom scale. Coordinates are converted between screen percentage and PDF point dimensions `(pWidth, pHeight)`. |
 | **Edit Tool** | `PDFDocument.load()`, `page.drawRectangle()`, `page.drawText()`, `pdfDoc.embedFont(StandardFonts)` | Draws whiteout rectangles and overlays text at baseline `pHeight - (y/100)*pHeight - fontSize`. |
 | **Organize Tool** | `PDFDocument.create()`, `newDoc.copyPages(sourceDoc, pageOrder)`, `page.setRotation(degrees(...))` | Copies pages in target sequence and applies cumulative angle offsets. |
-| **Redact Tool** | `page.drawRectangle({ color: rgb(0,0,0) })` | *In reference: purely visual black box. For EditorDoc P2P: must truly scrub underlying stream / rasterize.* |
+| **Redact Tool** | `page.drawRectangle({ color: rgb(0,0,0) })` | *In reference: purely visual black box. For Peer Docs: must truly scrub underlying stream / rasterize.* |
 | **Sign Tool** | `pdfDoc.embedPng(dataUrl)`, `page.drawImage()` | Converts canvas strokes to PNG data URL and embeds into PDF page coordinates. |
 | **Compress Tool**| `pdfDoc.save({ useObjectStreams: true })`, metadata removal | Optimizes PDF cross-reference streams. |
 | **Merge Tool** | `mergedPdf.copyPages(source, pageIndices)` | Concatenates multiple PDF byte streams. |
@@ -124,15 +124,15 @@ interface SignatureBox {
 
 ---
 
-## 4. Key Differences in EditorDoc P2P Architecture
+## 4. Key Differences in Peer Docs Architecture
 
 1. **State Ownership**:
    - Reference: Ephemeral React `useState` inside each individual component; loses edits on navigation or reload; zero collaboration.
-   - EditorDoc P2P: Centralized `Y.Doc` managed by `useCRDTSync` backed by `y-indexeddb` and synced via P2P WebRTC (`trystero`) and local `BroadcastChannel`.
+   - Peer Docs: Centralized `Y.Doc` managed by `useCRDTSync` backed by `y-indexeddb` and synced via P2P WebRTC (`trystero`) and local `BroadcastChannel`.
 
 2. **Page Ordering**:
    - Reference: `number[]` array of indices (cannot merge concurrently without conflicts).
-   - EditorDoc P2P: Fractional index string order on a `Y.Map<pageId, Y.Map>`, allowing deterministic non-conflicting page insertions and movements between peers.
+   - Peer Docs: Fractional index string order on a `Y.Map<pageId, Y.Map>`, allowing deterministic non-conflicting page insertions and movements between peers.
 
 3. **Field-level Granular Merges**:
    - Overlays, boxes, and metadata are nested `Y.Map` objects with Y.Text / primitive fields. Edits to x/y coordinates and text content merge concurrently without overwriting.

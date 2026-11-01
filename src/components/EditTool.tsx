@@ -158,11 +158,11 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
 
 type EditorMode = 'edit' | 'text' | 'eraser' | 'highlight' | 'box' | 'ink' | 'note';
 
-const REVIEW_MODES: { mode: EditorMode; label: string; Icon: React.FC<{ className?: string }> }[] = [
-  { mode: 'highlight', label: 'Highlight', Icon: Highlighter },
-  { mode: 'box', label: 'Box', Icon: Square },
-  { mode: 'ink', label: 'Draw', Icon: PenLine },
-  { mode: 'note', label: 'Note', Icon: MessageSquarePlus },
+const REVIEW_MODES: { mode: EditorMode; label: string; hint: string; Icon: React.FC<{ className?: string }> }[] = [
+  { mode: 'highlight', label: 'Highlight', hint: 'Drag over the page to highlight', Icon: Highlighter },
+  { mode: 'box', label: 'Box', hint: 'Drag to draw a box', Icon: Square },
+  { mode: 'ink', label: 'Draw', hint: 'Draw freehand', Icon: PenLine },
+  { mode: 'note', label: 'Note', hint: 'Click the page to pin a note and comment on it', Icon: MessageSquarePlus },
 ];
 
 /** Colour dot; the chosen one gets an Ink ring lifted off the toolbar. */
@@ -646,7 +646,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       }
     } catch (err) {
       console.error('Failed to save edited PDF:', err);
-      alert('Error saving PDF from CRDT state: ' + err);
+      alert('Could not save the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -661,7 +661,7 @@ export const EditTool: React.FC<EditToolProps> = ({
       downloadUint8ArrayAsFile(convergedBytes, outputName);
     } catch (err) {
       console.error('Failed to download edited PDF:', err);
-      alert('Error building final PDF from CRDT state: ' + err);
+      alert('Could not build the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setProcessing(false);
     }
@@ -689,13 +689,13 @@ export const EditTool: React.FC<EditToolProps> = ({
           <div className="w-14 h-14 rounded-2xl bg-mint text-ink flex items-center justify-center mx-auto">
             <Upload className="w-6 h-6" />
           </div>
-          <h2 className="font-serif text-subheading text-ink">No PDF Active</h2>
+          <h2 className="font-serif text-subheading text-ink">No document open</h2>
           <p className="text-body-sm text-graphite max-w-sm mx-auto">
-            Upload a PDF or return to the Dashboard to load the demo confidential agreement.
+            Open a PDF to edit it, or try the sample PDF from the dashboard.
           </p>
           <label className="btn btn-primary cursor-pointer">
             <Upload className="w-4 h-4" />
-            <span>Select PDF</span>
+            <span>Open PDF</span>
             <input type="file" accept="application/pdf" onChange={handleFileUpload} className="hidden" />
           </label>
         </div>
@@ -726,12 +726,12 @@ export const EditTool: React.FC<EditToolProps> = ({
 
           {/* Review markup */}
           <div className="segmented" role="group" aria-label="Review tools">
-            {REVIEW_MODES.map(({ mode, label, Icon }) => (
+            {REVIEW_MODES.map(({ mode, label, hint, Icon }) => (
               <button
                 key={mode}
                 onClick={() => setActiveTool(mode)}
                 aria-pressed={activeTool === mode}
-                title={label}
+                title={hint}
                 className="segment px-2.5"
               >
                 <Icon className="w-3.5 h-3.5" />
@@ -807,7 +807,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                   <button
                     key={c}
                     onClick={() => applyTextUpdate({ color: c })}
-                    aria-label={`Text colour ${c}`}
+                    aria-label={`Text color ${c}`}
                     className={swatch(textStyle.color === c)}
                     style={{ backgroundColor: c }}
                   />
@@ -858,20 +858,20 @@ export const EditTool: React.FC<EditToolProps> = ({
             onClick={handleSavePDF}
             disabled={processing}
             className="btn btn-secondary h-[34px] px-4 text-caption"
-            title="Save document to cache and end active session"
+            title="Close this document and return to the dashboard. It stays in Recent documents with your edits."
           >
             <Check className="w-3.5 h-3.5" />
-            <span>{processing ? 'Saving...' : 'Save'}</span>
+            <span>{processing ? 'Saving…' : 'Save & close'}</span>
           </button>
 
           <button
             onClick={handleDownloadPDF}
             disabled={processing}
             className="btn btn-primary h-[34px] px-4 text-caption"
-            title="Download PDF to your device (keeps document open in workspace)"
+            title="Download the PDF with all edits and markup. The document stays open."
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{processing ? 'Rendering...' : 'Download'}</span>
+            <span>{processing ? 'Preparing…' : 'Download PDF'}</span>
           </button>
         </div>
       </div>
@@ -962,6 +962,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                         e.stopPropagation();
                         crdt.removeWhiteout(w.id);
                       }}
+                      aria-label="Remove whiteout"
                       className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />
@@ -1031,6 +1032,7 @@ export const EditTool: React.FC<EditToolProps> = ({
                         e.stopPropagation();
                         crdt.removeTextOverlay(t.id);
                       }}
+                      aria-label="Remove text"
                       className="delete-btn opacity-0 group-hover:opacity-100 absolute -top-3 -right-3 w-5 h-5 bg-papaya text-white rounded-full flex items-center justify-center shadow-md-3 transition-opacity"
                     >
                       <Trash2 className="w-3 h-3" />

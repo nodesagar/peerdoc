@@ -4,11 +4,16 @@ import { initials, usePeers, PresenceUser } from '../lib/presence';
 
 const TOOL_LABELS: Record<string, string> = {
   dashboard: 'on the dashboard',
-  edit: 'editing text',
+  edit: 'editing',
   organize: 'organizing pages',
   redact: 'redacting',
   sign: 'signing',
   compress: 'compressing',
+  merge: 'merging PDFs',
+  split: 'splitting a PDF',
+  watermark: 'adding a watermark',
+  encrypt: 'password-protecting a PDF',
+  convert: 'converting images to PDF',
 };
 
 const MAX_SHOWN = 4;

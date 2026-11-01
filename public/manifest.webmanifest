@@ -1,7 +1,7 @@
 {
-  "name": "EditorDoc P2P",
-  "short_name": "EditorDoc",
-  "description": "Offline-first, peer-to-peer collaborative PDF editor.",
+  "name": "Peer Docs",
+  "short_name": "Peer Docs",
+  "description": "Offline-first, peer-to-peer collaborative document editor.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

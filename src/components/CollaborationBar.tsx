@@ -1,5 +1,5 @@
 import React from 'react';
-import { WifiOff, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
+import { HardDrive, Users, Download, Upload, Lock, FolderSync, Undo2, Redo2 } from 'lucide-react';
 import { ActiveTool, SyncStatus } from '../types';
 import { PresenceAvatars } from './PresenceAvatars';
 import type { Awareness } from 'y-protocols/awareness';
@@ -58,7 +58,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
     return (
       <div className="flex items-center gap-1.5 text-caption text-graphite px-3 h-9 rounded-full bg-ink/[0.04]">
         <FolderSync className="w-3.5 h-3.5" />
-        <span>No active document</span>
+        <span>No document open</span>
       </div>
     );
   }
@@ -68,11 +68,11 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
       <button
         type="button"
         onClick={onOpenActiveDoc}
-        title={fileName ? `Active document: ${fileName} — Click to open in editor` : 'Active document'}
+        title={fileName ? `${fileName} is open. Click to go back to it.` : 'Go back to the open document'}
         className="flex items-center gap-1.5 text-caption font-medium text-ink px-3 h-9 rounded-full bg-mint hover:brightness-95 transition-all"
       >
         <FolderSync className="w-3.5 h-3.5" />
-        <span>Active document</span>
+        <span>Back to document</span>
       </button>
     );
   }
@@ -92,7 +92,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
       {/* Sync / P2P Status Indicator */}
       <div className="flex items-center shrink-0">
         {peerCount > 0 ? (
-          <span className="chip bg-mint">
+          <span className="chip bg-mint" title="Collaborators connected to this document right now">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-ink/40"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-ink"></span>
@@ -100,14 +100,14 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
             <Users className="w-3.5 h-3.5" />
             <span>
               {peerCount}
-              <span className="hidden sm:inline"> {peerCount === 1 ? 'Peer' : 'Peers'}</span>
+              <span className="hidden sm:inline"> online</span>
             </span>
           </span>
         ) : (
-          <span className="chip bg-marigold" title="CRDT changes saved locally in IndexedDB; will sync when peers connect">
-            <WifiOff className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Offline (Saved)</span>
-            <span className="sr-only sm:hidden">Offline, changes saved</span>
+          <span className="chip bg-marigold" title="No collaborators connected. Your changes are saved in this browser and sync when someone joins.">
+            <HardDrive className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Saved locally</span>
+            <span className="sr-only sm:hidden">No collaborators connected, changes saved locally</span>
           </span>
         )}
       </div>
@@ -117,10 +117,10 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
       {servingCount > 0 && (
         <span
           className="chip bg-periwinkle shrink-0"
-          title="A peer requested the original PDF; it is being sent to them now"
+          title="A collaborator asked for the original file; sending it to them now"
         >
           <Upload className="w-3.5 h-3.5 animate-pulse" />
-          <span>Sending PDF{servingCount > 1 ? ` to ${servingCount}` : ''}</span>
+          <span>Sending file{servingCount > 1 ? ` to ${servingCount}` : ''}</span>
         </span>
       )}
 
@@ -141,7 +141,7 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
           onClick={onRedo}
           disabled={!canRedo}
           aria-label="Redo"
-          title="Redo (Ctrl/Cmd+Shift+Z)"
+          title="Redo your last undone edit (Ctrl/Cmd+Shift+Z)"
           className={iconBtn}
         >
           <Redo2 className="w-4 h-4" />
@@ -155,8 +155,8 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         <button
           onClick={() => shareRef.current?.showModal()}
           className="btn btn-primary h-8 px-3 gap-1.5 text-caption"
-          title={`Invite-only room for document ${documentId}\nInvite people or remove access`}
-          aria-label="Share: invite people or remove access"
+          title={`Document ${documentId}\n${access.status === 'owner' ? 'Invite people or remove access' : 'See who has access'}`}
+          aria-label={access.status === 'owner' ? 'Share: invite people or remove access' : 'See who has access'}
         >
           <Lock className="w-3.5 h-3.5" />
           <span className="hidden sm:inline font-mono text-[11px] font-normal text-white/70">{shortDocId}</span>
@@ -172,8 +172,8 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         <button
           onClick={onExportSync}
           className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
-          title="Export current CRDT state as .cdsync file for air-gapped / offline sync"
-          aria-label="Export .cdsync"
+          title="Save all changes to a .cdsync file, to carry them to a device that can't connect"
+          aria-label="Export sync file (.cdsync)"
         >
           <Download className="w-4 h-4" />
           <span className="hidden 2xl:inline">Export .cdsync</span>
@@ -182,8 +182,8 @@ export const CollaborationBar: React.FC<CollaborationBarProps> = ({
         <button
           onClick={() => fileInputRef.current?.click()}
           className="btn btn-ghost h-8 min-w-8 px-2 gap-1.5 text-caption"
-          title="Import .cdsync file to apply offline peer updates"
-          aria-label="Import .cdsync"
+          title="Apply the changes in a .cdsync file made on another device"
+          aria-label="Import sync file (.cdsync)"
         >
           <Upload className="w-4 h-4" />
           <span className="hidden 2xl:inline">Import .cdsync</span>

@@ -49,35 +49,35 @@ const ACTION_BADGE_CLASS: Record<DocAction, string> = {
 const TOOL_CARDS = [
   {
     tool: 'edit' as ActiveTool,
-    title: 'Edit Text & Erase',
-    text: 'Add text to a page or cover content with whiteout.',
-    cta: 'Open Editor',
+    title: 'Edit & review',
+    text: 'Edit a document’s own text, add new text, and mark it up with highlights, boxes, drawings and comments.',
+    cta: 'Open editor',
     Icon: Edit3,
     tile: 'bg-mint',
     frame: 'hover:ring-mint',
   },
   {
     tool: 'organize' as ActiveTool,
-    title: 'Organize & Reorder',
+    title: 'Organize pages',
     text: 'Reorder pages, rotate them, or remove the ones you don’t need.',
-    cta: 'Organize Pages',
+    cta: 'Organize pages',
     Icon: Layers,
     tile: 'bg-periwinkle',
     frame: 'hover:ring-periwinkle',
   },
   {
     tool: 'redact' as ActiveTool,
-    title: 'Redact Sensitive Info',
-    text: 'Black out private details and remove document metadata.',
-    cta: 'Redact Content',
+    title: 'Redact',
+    text: 'Black out private details for good. The download also leaves out the document’s metadata.',
+    cta: 'Redact content',
     Icon: EyeOff,
     tile: 'bg-marigold',
     frame: 'hover:ring-marigold',
   },
   {
     tool: 'sign' as ActiveTool,
-    title: 'Sign Document',
-    text: 'Draw or add a signature, then place it on the page.',
+    title: 'Sign',
+    text: 'Draw, type or upload a signature, then place it on the page.',
     cta: 'Sign PDF',
     Icon: PenTool,
     tile: 'bg-sky',
@@ -86,7 +86,7 @@ const TOOL_CARDS = [
   {
     tool: 'compress' as ActiveTool,
     title: 'Compress',
-    text: 'Reduce image-heavy PDFs while keeping text legible.',
+    text: 'Shrink image-heavy PDFs. Text and vector graphics stay sharp.',
     cta: 'Compress PDF',
     Icon: Minimize2,
     tile: 'bg-mint',
@@ -94,9 +94,9 @@ const TOOL_CARDS = [
   },
   {
     tool: 'merge' as ActiveTool,
-    title: 'Merge Documents',
-    text: 'Combine multiple files into a single master PDF with seamless client-side page copying.',
-    cta: 'Merge Files',
+    title: 'Merge PDFs',
+    text: 'Combine several PDFs into one, in the order you choose.',
+    cta: 'Merge PDFs',
     Icon: Scissors,
     iconClass: 'rotate-90',
     tile: 'bg-periwinkle',
@@ -167,9 +167,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-pretty text-body text-graphite md:text-lg">
-            Edit, sign, redact, and organize any document entirely on your device—then collaborate directly with peers in encrypted rooms{' '}
+            Edit your documents on your device, then work on them together in encrypted, invite-only rooms{' '}
             <mark className="rounded-md bg-marigold px-2 py-0.5 font-medium text-ink">
-              with zero central servers
+              with no Peer Docs server in between
             </mark>
             .
           </p>
@@ -195,7 +195,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="btn btn-secondary h-12 w-full px-6 text-body sm:w-auto"
             >
               <FileText className="w-4 h-4" />
-              <span>New document</span>
+              <span>New Word document</span>
             </button>
 
             <button
@@ -203,7 +203,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               className="btn btn-secondary h-12 w-full px-6 text-body sm:w-auto"
             >
               <FileText className="w-4 h-4" />
-              <span>Try a sample document</span>
+              <span>Try a sample PDF</span>
             </button>
           </div>
 
@@ -211,12 +211,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <form onSubmit={handleJoinSubmit} className="flex flex-col items-stretch gap-2 text-left sm:flex-row sm:items-end">
               <div className="min-w-0 flex-1">
                 <label htmlFor="join-room" className="mb-1.5 block text-caption font-medium text-graphite">
-                  Joining someone? Enter their room link or ID.
+                  Invited to a document? Paste the invite link.
                 </label>
                 <input
                   id="join-room"
                   type="text"
-                  placeholder="Paste room link or ID"
+                  placeholder="Invite link, or the ID of a document you’ve opened"
                   value={joinInput}
                   onChange={(e) => setJoinInput(e.target.value)}
                   className="field h-11 bg-white/90"
@@ -227,7 +227,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 disabled={!joinInput.trim()}
                 className="btn btn-secondary h-11 px-5 sm:mb-0"
               >
-                Join room
+                Join
               </button>
             </form>
           </div>
@@ -276,17 +276,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="w-10 h-10 rounded-full bg-linen text-ink flex items-center justify-center shrink-0">
                 <Clock className="w-[18px] h-[18px]" />
               </span>
-              <h2 className="font-serif text-subheading text-ink">Recent Documents</h2>
+              <h2 className="font-serif text-subheading text-ink">Recent documents</h2>
               <span className="text-caption text-graphite tabular-nums">({recentDocs.length})</span>
             </div>
             <span className="text-caption text-graphite">
-              Persisted locally until browser cache is cleared
+              Kept in this browser until you clear its cache
             </span>
           </div>
 
           {recentDocs.length === 0 ? (
             <div className="text-center py-10 text-body-sm text-graphite">
-              No recent documents yet. Open a PDF or Word document, or load the demo agreement above!
+              No documents yet. Open a file, or try the sample PDF above.
             </div>
           ) : (
             <>
@@ -295,10 +295,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <thead>
                   <tr className="border-b border-ash text-caption font-semibold text-graphite">
                     <th scope="col" className="py-3 pr-4 pl-2">Document</th>
-                    <th scope="col" className="py-3 px-4">Activity &amp; Details</th>
+                    <th scope="col" className="py-3 px-4">Last activity</th>
                     <th scope="col" className="py-3 px-4">Size</th>
-                    <th scope="col" className="py-3 px-4">Room ID</th>
-                    <th scope="col" className="py-3 px-4">Last Worked</th>
+                    <th scope="col" className="py-3 px-4">Document ID</th>
+                    <th scope="col" className="py-3 px-4">Updated</th>
                     <th scope="col" className="py-3 pl-4 pr-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -378,7 +378,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               {doc.documentId.slice(0, 8)}...
                             </span>
                           ) : (
-                            <span className="text-caption text-graphite">Local</span>
+                            <span className="text-caption text-graphite" title="Made by a tool on this device; not shared">Local file</span>
                           )}
                         </td>
 
@@ -399,7 +399,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                     : doc.documentId && onJoinRoomId(doc.documentId, doc.tool)
                                 }
                                 className="btn btn-soft h-8 px-3.5 text-caption"
-                                title="Open document in editor"
+                                title="Open in the tool you last used"
                               >
                                 Open
                               </button>
@@ -408,7 +408,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                               <button
                                 onClick={() => onSelectRecentDoc(doc)}
                                 className="btn btn-ghost h-8 w-8 px-0"
-                                title="Download copy"
+                                title={
+                                  doc.blob
+                                    ? 'Download'
+                                    : isActive && fmt === 'PDF'
+                                      ? 'Download with all current edits'
+                                      : 'Download the original file (open it to download with edits)'
+                                }
                                 aria-label={`Download ${doc.name}`}
                               >
                                 <Download className="w-4 h-4" />

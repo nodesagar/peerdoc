@@ -15,6 +15,9 @@ export const FORMAT_LABEL: Record<DocFormat, string> = {
 export const OPEN_ACCEPT =
   '.pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword';
 
+/** File extensions the app opens, for messages ('.pdf', '.docx', ...). */
+export const SUPPORTED_EXTENSIONS = OPEN_ACCEPT.split(',').filter((t) => t.startsWith('.'));
+
 export function detectFormat(bytes: Uint8Array): DocFormat | null {
   if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04) return 'docx';
   if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) return 'doc';

@@ -81,7 +81,7 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
         details: `Merged ${queue.length} ${queue.length === 1 ? 'file' : 'files'}`,
       });
     } catch (err) {
-      alert('Error merging files: ' + err);
+      alert('Could not merge the files: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsMerging(false);
     }
@@ -92,11 +92,11 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full border border-blue-200">
           <Layers className="w-4 h-4 text-blue-600" />
-          <span>MULTI-DOCUMENT MERGE</span>
+          <span>Merge</span>
         </div>
-        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Merge PDF Files</h1>
+        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Merge PDFs</h1>
         <p className="text-xs text-[#5f6368]">
-          Combine multiple PDF files in any sequence with instant client-side processing.
+          Combine several PDFs into one file, in the order you set. Everything happens in your browser.
         </p>
       </div>
 
@@ -111,15 +111,15 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
         <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2 shadow-sm">
           <Upload className="w-6 h-6" />
         </div>
-        <span className="text-sm font-semibold text-[#1a1c1c]">Select or drop PDF files to combine</span>
-        <span className="text-xs text-[#5f6368] block mt-1">Multi-file selection supported</span>
+        <span className="text-sm font-semibold text-[#1a1c1c]">Choose or drop the PDFs to combine</span>
+        <span className="text-xs text-[#5f6368] block mt-1">You can select several at once</span>
       </div>
 
       {queue.length > 0 && (
         <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-black/5 pb-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-black/60">
-              Files to Merge ({queue.length})
+              Files to merge ({queue.length})
             </span>
             <button
               onClick={() => setQueue([])}
@@ -153,7 +153,7 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
                     onClick={() => moveUp(idx)}
                     disabled={idx === 0}
                     className="p-1 hover:bg-black/5 rounded text-black/60 disabled:opacity-20"
-                    title="Move up"
+                    title="Move up" aria-label={`Move ${item.name} up`}
                   >
                     <ArrowUp className="w-4 h-4" />
                   </button>
@@ -161,14 +161,14 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
                     onClick={() => moveDown(idx)}
                     disabled={idx === queue.length - 1}
                     className="p-1 hover:bg-black/5 rounded text-black/60 disabled:opacity-20"
-                    title="Move down"
+                    title="Move down" aria-label={`Move ${item.name} down`}
                   >
                     <ArrowDown className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => removeItem(item.id)}
                     className="p-1 hover:bg-red-50 text-red-500 rounded"
-                    title="Remove"
+                    title="Remove from list" aria-label={`Remove ${item.name} from list`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -187,7 +187,7 @@ export const MergeTool: React.FC<MergeToolProps> = ({ onDocumentProcessed }) => 
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-6 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50 flex items-center space-x-2"
             >
               <Layers className="w-4 h-4" />
-              <span>{isMerging ? 'Merging Files...' : 'Merge & Download'}</span>
+              <span>{isMerging ? 'Merging…' : 'Merge & download'}</span>
             </button>
           </div>
         </div>

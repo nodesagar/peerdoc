@@ -53,7 +53,7 @@ export function createDocxFiles(bodyXml: string, opts: { title?: string; identif
     // The identifier makes every new document's bytes (and so its room ID) unique
     'docProps/core.xml':
       XML_DECL +
-      `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${(opts.title ?? '').replace(/[<&>"]/g, '')}</dc:title><dc:identifier>${identifier}</dc:identifier><dc:creator>EditorDoc</dc:creator></cp:coreProperties>`,
+      `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${(opts.title ?? '').replace(/[<&>"]/g, '')}</dc:title><dc:identifier>${identifier}</dc:identifier><dc:creator>Peer Docs</dc:creator></cp:coreProperties>`,
   };
   return Object.fromEntries(Object.entries(files).map(([k, v]) => [k, strToU8(v)]));
 }

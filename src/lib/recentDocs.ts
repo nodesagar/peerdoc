@@ -222,8 +222,6 @@ export function summarizeSnapshotWork(
     action = 'Signed';
   } else if (activeTool === 'organize' && (rotatedPages > 0 || deletedPages > 0 || reorderedPages)) {
     action = 'Organized';
-  } else if (activeTool === 'compress') {
-    action = 'Compressed';
   } else if (hasModifications) {
     if (redactionsCount > 0 && textEditsCount === 0 && signaturesCount === 0) action = 'Redacted';
     else if (signaturesCount > 0 && textEditsCount === 0 && redactionsCount === 0) action = 'Signed';
@@ -238,14 +236,14 @@ export function summarizeSnapshotWork(
   if (commentsCount > 0) modParts.push(`${commentsCount} ${commentsCount === 1 ? 'comment' : 'comments'}`);
   if (redactionsCount > 0) modParts.push(`${redactionsCount} ${redactionsCount === 1 ? 'redaction' : 'redactions'}`);
   if (signaturesCount > 0) modParts.push(`${signaturesCount} ${signaturesCount === 1 ? 'signature' : 'signatures'}`);
-  if (rotatedPages > 0) modParts.push(`${rotatedPages} rotated`);
-  if (deletedPages > 0) modParts.push(`${deletedPages} deleted`);
-  if (reorderedPages) modParts.push('reordered');
+  if (rotatedPages > 0) modParts.push(`${rotatedPages} ${rotatedPages === 1 ? 'page' : 'pages'} rotated`);
+  if (deletedPages > 0) modParts.push(`${deletedPages} ${deletedPages === 1 ? 'page' : 'pages'} deleted`);
+  if (reorderedPages) modParts.push('pages reordered');
 
   const prefixParts: string[] = [];
   if (isWordDoc) {
     prefixParts.push('Word document');
-    if (wordModified && modParts.length === 0) modParts.push('Modified in editor');
+    if (wordModified && modParts.length === 0) modParts.push('edited');
   } else if (activePages && activePages > 0) {
     prefixParts.push(`${activePages} ${activePages === 1 ? 'page' : 'pages'}`);
   }

@@ -3,7 +3,7 @@ import { computeSHA256, chunkPDF, ChunkReassembler } from '../lib/crdt/pdfStore'
 
 describe('PDF Store & Binary Chunker', () => {
   it('computes deterministic SHA-256 digests', async () => {
-    const data = new TextEncoder().encode('Hello EditorDoc P2P');
+    const data = new TextEncoder().encode('Hello Peer Docs');
     const hash1 = await computeSHA256(data);
     const hash2 = await computeSHA256(data);
 

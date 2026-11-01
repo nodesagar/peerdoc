@@ -72,7 +72,7 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
         details: `Converted ${imageUrls.length} ${imageUrls.length === 1 ? 'image' : 'images'}`,
       });
     } catch (err) {
-      alert('Error converting images: ' + err);
+      alert('Could not build the PDF: ' + (err instanceof Error ? err.message : err));
     } finally {
       setIsProcessing(false);
     }
@@ -83,11 +83,11 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 bg-emerald-50 text-emerald-800 text-xs font-semibold px-3 py-1.5 rounded-full border border-emerald-200">
           <Image className="w-4 h-4 text-emerald-600" />
-          <span>IMAGE TO PDF CONVERTER</span>
+          <span>Images to PDF</span>
         </div>
-        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Convert Images to PDF</h1>
+        <h1 className="text-3xl font-serif-heading font-bold text-[#1a1c1c]">Convert images to PDF</h1>
         <p className="text-xs text-[#5f6368]">
-          Combine multiple PNGs or JPEGs into a high-quality PDF document.
+          Turn PNG, JPEG or WebP images into one PDF, one image per page.
         </p>
       </div>
 
@@ -103,14 +103,14 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
           <Upload className="w-6 h-6" />
         </div>
         <span className="text-sm font-semibold text-[#1a1c1c]">Select or drop images</span>
-        <span className="text-xs text-[#5f6368] block mt-1">PNG and JPG files supported</span>
+        <span className="text-xs text-[#5f6368] block mt-1">PNG, JPEG and WebP supported</span>
       </div>
 
       {imageUrls.length > 0 && (
         <div className="bg-white rounded-2xl border border-black/10 p-6 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-black/5 pb-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-black/60">
-              Selected Images ({imageUrls.length})
+              Selected images ({imageUrls.length})
             </span>
             <button onClick={() => setImageUrls([])} className="text-xs text-red-600 hover:underline">
               Clear all
@@ -123,6 +123,7 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
                 <img src={item.url} alt={item.name} className="w-full h-28 object-cover" />
                 <button
                   onClick={() => setImageUrls((prev) => prev.filter((i) => i.id !== item.id))}
+                  aria-label={`Remove ${item.name}`}
                   className="opacity-0 group-hover:opacity-100 absolute top-2 right-2 p-1 bg-red-600 text-white rounded-md shadow-md transition-opacity"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -138,7 +139,7 @@ export const ConvertTool: React.FC<ConvertToolProps> = ({ onDocumentProcessed })
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-6 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer disabled:opacity-50 flex items-center space-x-2"
             >
               <Download className="w-4 h-4" />
-              <span>{isProcessing ? 'Converting...' : 'Convert & Download PDF'}</span>
+              <span>{isProcessing ? 'Converting…' : 'Convert & download PDF'}</span>
             </button>
           </div>
         </div>

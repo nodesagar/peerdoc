@@ -21,12 +21,12 @@ export const AccessCard: React.FC<AccessCardProps> = ({ status, onReturnToDashbo
         </h2>
         <p className="text-body text-graphite max-w-md mx-auto">
           {pending
-            ? 'Your invite is valid. The owner’s browser admits you automatically the next time EditorDoc is open there, with no server involved. Keep this tab open.'
+            ? 'Your invite is valid. The owner’s browser admits you automatically the next time Peer Docs is open there, with no server involved. Keep this tab open.'
             : 'The owner removed you from this document. You will not receive further changes. Anything already in this browser stays here.'}
         </p>
         <button onClick={onReturnToDashboard} className="btn btn-ghost">
           <ArrowLeft className="w-4 h-4" />
-          Dashboard
+          Back to dashboard
         </button>
       </div>
     </div>
