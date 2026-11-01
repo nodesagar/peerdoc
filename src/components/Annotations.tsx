@@ -209,7 +209,12 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
   const resolvedCount = annotations.filter((a) => a.resolved).length;
 
   return (
-    <aside className="w-80 shrink-0 mr-4 md:mr-6 my-4 bg-white rounded-3xl shadow-xl flex flex-col min-h-0 overflow-hidden" aria-label="Comments">
+    // Beside the canvas on wide screens; over it on narrow ones, where a fixed 20rem column
+    // would squeeze the page to nothing.
+    <aside
+      className="w-80 shrink-0 ml-3 mr-4 md:mr-6 my-4 bg-white rounded-3xl shadow-xl flex flex-col min-h-0 overflow-hidden max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-40 max-md:w-[min(20rem,calc(100%-2rem))]"
+      aria-label="Comments"
+    >
       <div className="flex items-center justify-between pl-5 pr-3 py-3 border-b border-ash">
         <h2 className="text-body font-semibold text-ink">Comments</h2>
         <div className="flex items-center gap-2">

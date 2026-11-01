@@ -876,7 +876,7 @@ export const EditTool: React.FC<EditToolProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 flex min-h-0">
+      <div className="relative flex-1 flex min-h-0">
       {/* Canvas Viewport */}
       <div
         ref={containerRef}
